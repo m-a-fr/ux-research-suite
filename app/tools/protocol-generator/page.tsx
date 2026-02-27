@@ -1,24 +1,66 @@
 "use client";
 
 import { useState } from "react";
-import { Protocol, ProtocolFormValues } from "@/lib/types/protocol";
+import { Protocol, ProtocolFormValues, StudyType } from "@/lib/types/protocol";
+import { ExploratoryProtocol, ExploratoryFormValues } from "@/lib/types/exploratory";
+import { Survey, SurveyFormValues } from "@/lib/types/survey";
+import { ModeratedProtocol, ModeratedFormValues } from "@/lib/types/moderated";
+import { UnmoderatedProtocol, UnmoderatedFormValues } from "@/lib/types/unmoderated";
 import { ProtocolForm } from "@/components/tools/ProtocolForm";
 import { ProtocolPreview } from "@/components/tools/ProtocolPreview";
+import { ExploratoryForm } from "@/components/tools/ExploratoryForm";
+import { ExploratoryPreview } from "@/components/tools/ExploratoryPreview";
+import { SurveyForm } from "@/components/tools/SurveyForm";
+import { SurveyPreview } from "@/components/tools/SurveyPreview";
+import { ModeratedForm } from "@/components/tools/ModeratedForm";
+import { ModeratedPreview } from "@/components/tools/ModeratedPreview";
+import { UnmoderatedForm } from "@/components/tools/UnmoderatedForm";
+import { UnmoderatedPreview } from "@/components/tools/UnmoderatedPreview";
 import { Separator } from "@/components/ui/separator";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 
+// ─── Types ─────────────────────────────────────────────────────────────────
+
+type AnyResult = Protocol | ExploratoryProtocol | Survey | ModeratedProtocol | UnmoderatedProtocol;
+type AnyFormValues = ProtocolFormValues | ExploratoryFormValues | SurveyFormValues | ModeratedFormValues | UnmoderatedFormValues;
 type PageState = "idle" | "streaming" | "done" | "error";
 
+const STUDY_TYPE_OPTIONS: { value: StudyType; label: string }[] = [
+  { value: "exploratory_interview", label: "Entretien exploratoire" },
+  { value: "moderated_usability", label: "Test d'utilisabilité modéré" },
+  { value: "unmoderated_usability", label: "Test d'utilisabilité non-modéré" },
+  { value: "survey", label: "Sondage / Survey" },
+  // diary_study: désactivé — à finaliser dans une prochaine itération
+];
+
+// ─── Page ──────────────────────────────────────────────────────────────────
+
 export default function ProtocolGeneratorPage() {
+  const [studyType, setStudyType] = useState<StudyType>("exploratory_interview");
   const [pageState, setPageState] = useState<PageState>("idle");
   const [streamBuffer, setStreamBuffer] = useState("");
-  const [protocol, setProtocol] = useState<Protocol | null>(null);
+  const [result, setResult] = useState<AnyResult | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [isExporting, setIsExporting] = useState(false);
 
-  async function handleGenerate(values: ProtocolFormValues) {
+  function handleTypeChange(newType: StudyType) {
+    setStudyType(newType);
+    setPageState("idle");
+    setResult(null);
+    setError(null);
+    setStreamBuffer("");
+  }
+
+  async function handleGenerate(values: AnyFormValues) {
     setPageState("streaming");
     setStreamBuffer("");
-    setProtocol(null);
+    setResult(null);
     setError(null);
 
     try {
@@ -30,7 +72,7 @@ export default function ProtocolGeneratorPage() {
 
       if (!response.ok) {
         const data = await response.json().catch(() => ({}));
-        throw new Error(data.error ?? `Erreur ${response.status}`);
+        throw new Error((data as { error?: string }).error ?? `Erreur ${response.status}`);
       }
 
       const reader = response.body?.getReader();
@@ -53,18 +95,18 @@ export default function ProtocolGeneratorPage() {
         setStreamBuffer(accumulated);
       }
 
-      // Parsing du JSON final
-      let parsed: Protocol;
       const jsonMatch = accumulated.match(/\{[\s\S]*\}/);
       if (!jsonMatch) throw new Error("Aucun JSON trouvé dans la réponse");
+
+      let parsed: AnyResult;
       try {
         parsed = JSON.parse(jsonMatch[0]);
       } catch (parseErr) {
         const msg = parseErr instanceof Error ? parseErr.message : String(parseErr);
-        throw new Error(`JSON invalide reçu de Claude : ${msg}. Réessaie — si le problème persiste, raccourcis l'objectif.`);
+        throw new Error(`JSON invalide reçu : ${msg}. Réessaie.`);
       }
 
-      setProtocol(parsed);
+      setResult(parsed);
       setPageState("done");
     } catch (err) {
       const message = err instanceof Error ? err.message : "Une erreur est survenue";
@@ -74,25 +116,25 @@ export default function ProtocolGeneratorPage() {
   }
 
   async function handleExport() {
-    if (!protocol) return;
+    if (!result) return;
     setIsExporting(true);
     try {
       const response = await fetch("/api/export-protocol", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ protocol }),
+        body: JSON.stringify({ protocol: result }),
       });
 
       if (!response.ok) {
         const data = await response.json().catch(() => ({}));
-        throw new Error(data.error ?? "Erreur lors de l'export");
+        throw new Error((data as { error?: string }).error ?? "Erreur lors de l'export");
       }
 
       const blob = await response.blob();
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = url;
-      a.download = `protocole-${protocol.study_type}-${Date.now()}.docx`;
+      a.download = `${result.study_type}-${Date.now()}.docx`;
       document.body.appendChild(a);
       a.click();
       document.body.removeChild(a);
@@ -106,9 +148,17 @@ export default function ProtocolGeneratorPage() {
   }
 
   const isLoading = pageState === "streaming";
+  const isExploratory = studyType === "exploratory_interview";
+  const isSurvey = studyType === "survey";
+  const isModerated = studyType === "moderated_usability";
+  const isUnmoderated = studyType === "unmoderated_usability";
+
+  // Determine which preview to show — based on active study type or received result
+  const activeStudyType = result?.study_type ?? studyType;
 
   return (
     <div className="max-w-6xl mx-auto px-4 py-10">
+      {/* Header */}
       <div className="mb-8">
         <h1 className="text-2xl font-bold tracking-tight">Générateur de protocole</h1>
         <p className="text-muted-foreground mt-1">
@@ -116,10 +166,47 @@ export default function ProtocolGeneratorPage() {
         </p>
       </div>
 
+      {/* Study type selector */}
+      <div className="mb-6">
+        <label className="text-sm font-medium block mb-1.5">Type d&apos;étude</label>
+        <Select
+          value={studyType}
+          onValueChange={(v) => handleTypeChange(v as StudyType)}
+          disabled={isLoading}
+        >
+          <SelectTrigger className="w-full sm:w-72">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            {STUDY_TYPE_OPTIONS.map((opt) => (
+              <SelectItem key={opt.value} value={opt.value}>
+                {opt.label}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      </div>
+
+      <Separator className="mb-6" />
+
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 items-start">
         {/* Formulaire */}
         <div className="sticky top-6">
-          <ProtocolForm onSubmit={handleGenerate} isLoading={isLoading} />
+          {isExploratory ? (
+            <ExploratoryForm onSubmit={handleGenerate} isLoading={isLoading} />
+          ) : isSurvey ? (
+            <SurveyForm onSubmit={handleGenerate} isLoading={isLoading} />
+          ) : isModerated ? (
+            <ModeratedForm onSubmit={handleGenerate} isLoading={isLoading} />
+          ) : isUnmoderated ? (
+            <UnmoderatedForm onSubmit={handleGenerate} isLoading={isLoading} />
+          ) : (
+            <ProtocolForm
+              studyType={studyType as Exclude<StudyType, "exploratory_interview">}
+              onSubmit={handleGenerate}
+              isLoading={isLoading}
+            />
+          )}
 
           {pageState === "error" && error && (
             <div className="mt-4 rounded-md border border-destructive/50 bg-destructive/10 px-4 py-3 text-sm text-destructive">
@@ -138,13 +225,54 @@ export default function ProtocolGeneratorPage() {
           ) : (
             <>
               <Separator className="lg:hidden mb-6" />
-              <ProtocolPreview
-                protocol={protocol}
-                isStreaming={pageState === "streaming"}
-                streamBuffer={streamBuffer}
-                onExport={handleExport}
-                isExporting={isExporting}
-              />
+
+              {activeStudyType === "exploratory_interview" ? (
+                <ExploratoryPreview
+                  protocol={result?.study_type === "exploratory_interview"
+                    ? (result as ExploratoryProtocol)
+                    : null}
+                  isStreaming={pageState === "streaming"}
+                  streamBuffer={streamBuffer}
+                  onExport={handleExport}
+                  isExporting={isExporting}
+                />
+              ) : activeStudyType === "survey" ? (
+                <SurveyPreview
+                  survey={result?.study_type === "survey" ? (result as Survey) : null}
+                  isStreaming={pageState === "streaming"}
+                  streamBuffer={streamBuffer}
+                  onExport={handleExport}
+                  isExporting={isExporting}
+                />
+              ) : activeStudyType === "moderated_usability" ? (
+                <ModeratedPreview
+                  protocol={result?.study_type === "moderated_usability"
+                    ? (result as ModeratedProtocol)
+                    : null}
+                  isStreaming={pageState === "streaming"}
+                  streamBuffer={streamBuffer}
+                  onExport={handleExport}
+                  isExporting={isExporting}
+                />
+              ) : activeStudyType === "unmoderated_usability" ? (
+                <UnmoderatedPreview
+                  protocol={result?.study_type === "unmoderated_usability"
+                    ? (result as UnmoderatedProtocol)
+                    : null}
+                  isStreaming={pageState === "streaming"}
+                  streamBuffer={streamBuffer}
+                  onExport={handleExport}
+                  isExporting={isExporting}
+                />
+              ) : (
+                <ProtocolPreview
+                  protocol={result as Protocol | null}
+                  isStreaming={pageState === "streaming"}
+                  streamBuffer={streamBuffer}
+                  onExport={handleExport}
+                  isExporting={isExporting}
+                />
+              )}
             </>
           )}
         </div>

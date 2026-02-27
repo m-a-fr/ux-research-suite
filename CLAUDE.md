@@ -9,11 +9,6 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ## Commandes
 
 ```bash
-# Démarrage du projet (première fois)
-npx create-next-app@latest . --typescript --tailwind --app
-npm install @anthropic-ai/sdk docx pptxgenjs xlsx
-npx shadcn-ui@latest init
-
 # Développement
 npm run dev
 
@@ -26,9 +21,9 @@ npm run lint
 
 ## Stack technique
 
-- **Framework** : Next.js 14 (App Router, TypeScript)
-- **Styling** : Tailwind CSS + shadcn/ui (composants UI exclusivement via shadcn)
-- **IA** : Anthropic SDK Node.js — `claude-sonnet-4-6`, streaming activé, `max_tokens: 4096`
+- **Framework** : Next.js 16 (App Router, TypeScript)
+- **Styling** : Tailwind CSS v4 + shadcn/ui (composants UI exclusivement via shadcn). Pas de `tailwind.config.js` — config dans `app/globals.css` via `@import "tailwindcss"`.
+- **IA** : Anthropic SDK Node.js — `claude-sonnet-4-6`, streaming activé, `max_tokens: 8192`
 - **Export fichiers** : `docx` → Word, `pptxgenjs` → PowerPoint, `xlsx` → Excel
 - **Pas de base de données en v1** — sessions stateless, outputs téléchargés directement
 - **Déploiement** : Vercel + `docker-compose` pour self-hosting
@@ -41,20 +36,20 @@ npm run lint
 /app
   /tools
     /protocol-generator/     → Use case 1 : génération de protocoles
-    /brief-builder/          → Use case 2 : slides de brief stakeholders
-    /results-analyzer/       → Use case 3 : analyse de résultats d'études
+    /brief-builder/          → Use case 2 : slides de brief stakeholders (à venir)
+    /results-analyzer/       → Use case 3 : analyse de résultats d'études (à venir)
   /api
     /generate-protocol/      → route.ts — appel Claude + streaming
-    /generate-brief/         → route.ts — appel Claude + streaming
-    /analyze-results/        → route.ts — appel Claude + streaming
+    /export-protocol/        → route.ts — génération DOCX
+    /generate-brief/         → route.ts — appel Claude + streaming (à venir)
+    /analyze-results/        → route.ts — appel Claude + streaming (à venir)
 /lib
-  /prompts/                  → prompts adaptatifs par type d'étude (un fichier par type)
-  /exporters/                → docx.ts, pptx.ts, xlsx.ts (server-side uniquement)
-  /parsers/                  → parsing et validation JSON des réponses Claude
-  /types/                    → interfaces TypeScript partagées (protocole, brief, analyse)
+  /prompts/                  → index.ts (dispatcher) + un fichier par type d'étude
+  /exporters/                → docx-<type>.ts (server-side uniquement)
+  /types/                    → interfaces TypeScript par type d'étude
 /components
   /ui/                       → composants shadcn/ui
-  /tools/                    → composants spécifiques à chaque outil
+  /tools/                    → <Type>Form.tsx + <Type>Preview.tsx par type d'étude
 ```
 
 ---
@@ -63,11 +58,11 @@ npm run lint
 
 - **API Key** : `ANTHROPIC_API_KEY` ne doit jamais être exposée côté client — toutes les requêtes Claude passent par `/app/api/`.
 - **Streaming obligatoire** sur toutes les routes API — utiliser `ReadableStream` avec l'Anthropic SDK pour éviter les timeouts.
-- **JSON structuré uniquement** : Claude répond toujours via `tool_use` ou format contraint, jamais en markdown libre. Le front reconstruit la mise en forme.
-- **Validation JSON** : envelopper le parsing dans un try/catch et relancer avec un prompt de correction si le JSON est invalide.
-- **Prompts adaptatifs** : un prompt système distinct par type d'étude dans `/lib/prompts/`, pas de prompt générique.
-- **Chunking** : pour les fichiers volumineux (use case 3), découper en chunks de 3000 tokens max avant envoi à Claude.
+- **JSON structuré uniquement** : Claude répond toujours avec du JSON valide contraint par le prompt système, jamais en markdown libre.
+- **Prompts adaptatifs** : un prompt système distinct par type d'étude dans `/lib/prompts/`, avec le schéma JSON attendu intégré dans le prompt.
+- **Buffer → Uint8Array** : `new Response(buffer)` échoue en Next.js 16 — convertir : `new Uint8Array(nodeBuffer)`.
 - **Exporters server-side only** : `docx`, `pptx`, `xlsx` ne sont pas compatibles browser — s'exécutent uniquement dans les API routes.
+- **`z.coerce.number()` + react-hook-form** : nécessite `zodResolver(schema) as Resolver<FormSchema>` pour éviter l'erreur TS.
 
 ---
 
@@ -82,99 +77,186 @@ ANTHROPIC_API_KEY=sk-ant-...
 
 ## Use case 1 — Générateur de protocole
 
-**Inputs** : type d'étude (`exploratory_interview` | `moderated_usability` | `unmoderated_usability` | `survey` | `diary_study`), objectif de recherche, audience cible, durée prévue, nombre de participants.
+### Types d'études disponibles
 
-**Export** : `.docx`
+| Type | Status | Composants |
+|------|--------|-----------|
+| `exploratory_interview` | ✅ | ExploratoryForm / ExploratoryPreview / docx-exploratory |
+| `moderated_usability` | ✅ | ModeratedForm / ModeratedPreview / docx-moderated |
+| `unmoderated_usability` | ✅ | UnmoderatedForm / UnmoderatedPreview / docx-unmoderated |
+| `survey` | ✅ | SurveyForm / SurveyPreview / docx-survey |
+| `diary_study` | 🚧 désactivé | Coming soon — non sélectionnable |
 
-### Schéma JSON de sortie
+### Architecture par type (pattern commun)
+
+Chaque type d'étude a son propre slice :
+- `lib/types/<type>.ts` — interfaces TypeScript + type `FormValues`
+- `lib/prompts/<type>.ts` — prompt système avec schéma JSON intégré
+- `components/tools/<Type>Form.tsx` — formulaire react-hook-form + Zod
+- `components/tools/<Type>Preview.tsx` — preview en streaming avec détection de stages
+- `lib/exporters/docx-<type>.ts` — exporter DOCX server-side
+
+Le dispatcher `lib/prompts/index.ts` exporte `getSystemPrompt(studyType, testDesign?)`.
+
+### Distinction fondamentale modéré / non-modéré
+
+**Modéré** = guide animateur. Tout le contenu est rédigé du point de vue de l'animateur.
+- Champs clés : `script` (voix de l'animateur), `probe_questions[condition/question]`, `observer_cues`, questions post-tâche structurées.
+- Pas de `screen_text`, pas de `starting_url`.
+
+**Non-modéré** = script outil. Le participant lit `screen_text` affiché par l'outil (2e personne impératif).
+- Champs clés : `screen_text`, `starting_url` par tâche, `automated_metrics` (enum), `analysis_guide`.
+- Pas de voix humaine, pas de probe questions.
+
+---
+
+### Schémas JSON par type
+
+#### `exploratory_interview`
+```json
+{
+  "study_type": "exploratory_interview",
+  "title": "string",
+  "interview_style": "semi_directive | non_directive",
+  "duration_minutes": 60,
+  "sections": [{
+    "type": "intro | warmup | themes | closing",
+    "title": "string",
+    "duration_minutes": 5,
+    "script": "string",
+    "questions": [{ "text": "string", "modality": "string", "options": ["string"] }],
+    "tips": "string"
+  }],
+  "consent_note": "string",
+  "materials_needed": ["string"]
+}
+```
+
+#### `moderated_usability`
 ```json
 {
   "study_type": "moderated_usability",
   "title": "string",
+  "product_name": "string",
+  "platform": "web | mobile | desktop",
+  "fidelity": "live_product | prototype_hifi | prototype_lowfi",
+  "think_aloud": "concurrent | retrospective | none",
   "duration_minutes": 60,
-  "sections": [
-    {
-      "type": "intro | warmup | tasks | debrief",
-      "title": "string",
-      "duration_minutes": 5,
-      "script": "string",
-      "questions": ["string"],
-      "tips": "string"
-    }
-  ],
-  "tasks": [
-    {
-      "task": "string",
-      "scenario": "string",
-      "success_criteria": "string"
-    }
-  ],
+  "sections": [{
+    "type": "intro | warmup | tasks | debrief",
+    "title": "string",
+    "duration_minutes": 5,
+    "script": "string",
+    "questions": [{ "text": "string", "modality": "string", "options": ["string"] }],
+    "tips": "string"
+  }],
+  "tasks": [{
+    "task": "string",
+    "scenario": "string",
+    "success_criteria": "string",
+    "time_limit_minutes": 5,
+    "observer_cues": ["string"],
+    "probe_questions": [{ "condition": "string", "question": "string" }],
+    "post_task_questions": [{ "text": "string", "modality": "string", "options": ["string"] }]
+  }],
   "observer_guide": "string",
   "consent_note": "string",
   "materials_needed": ["string"]
 }
 ```
 
-### Exemple de prompt système (`moderated_usability`)
-```
-Tu es un expert en UX research. Génère un protocole de test d'utilisabilité modéré professionnel en JSON valide.
-Le protocole doit respecter les standards UX industry : intro > warmup > tâches > debrief.
-Adapte la durée et la profondeur au nombre de participants et à l'objectif fourni.
-Réponds UNIQUEMENT avec du JSON valide, sans markdown, sans texte avant ou après.
-```
+#### `unmoderated_usability` — 3 designs (union discriminée sur `test_design`)
 
----
-
-## Use case 2 — Brief Builder (slides stakeholders)
-
-**Inputs** : nom du projet, objectif business, questions de recherche, méthodologie, audience participants, timeline, décisions attendues. Optionnel : contexte concurrentiel, contraintes.
-
-**Export** : `.pptx` (8–10 slides : cover → contexte → objectifs → méthodologie → participants → planning → décisions attendues → next steps)
-
-### Schéma JSON de sortie
+**Monadic** :
 ```json
 {
+  "study_type": "unmoderated_usability",
+  "test_design": "monadic",
   "title": "string",
-  "slides": [
-    {
-      "slide_number": 1,
-      "type": "cover | context | objectives | methodology | participants | timeline | expected_decisions",
-      "title": "string",
-      "body": "string",
-      "bullets": ["string"],
-      "speaker_notes": "string"
-    }
-  ]
+  "product_name": "string",
+  "platform": "web | mobile | desktop",
+  "tool": "string",
+  "estimated_duration_minutes": 15,
+  "welcome_block": { "screen_text": "string" },
+  "tasks": [{
+    "task": "string",
+    "screen_text": "string",
+    "starting_url": "string",
+    "automated_metrics": ["task_completion", "time_on_task", "click_count", "error_count", "navigation_path"],
+    "post_task_questions": [{ "text": "string", "modality": "string" }],
+    "success_criteria": "string"
+  }],
+  "closing_block": { "screen_text": "string" },
+  "screener_questions": ["string"],
+  "analysis_guide": "string"
+}
+```
+
+**A/B** (`ab_design: "within" | "between"`, `counterbalancing: boolean`) :
+```json
+{
+  "study_type": "unmoderated_usability",
+  "test_design": "ab",
+  "ab_design": "within | between",
+  "counterbalancing": true,
+  "variants": [
+    { "label": "A", "product_name": "string", "description": "string", "tasks": [{...}] },
+    { "label": "B", "product_name": "string", "description": "string", "tasks": [{...}] }
+  ],
+  "comparison_questions": [{ "text": "string", "modality": "string" }],
+  "welcome_block": { "screen_text": "string" },
+  "closing_block": { "screen_text": "string" },
+  "screener_questions": ["string"],
+  "analysis_guide": "string"
+}
+```
+> `comparison_questions` est vide pour between-subjects (pas de comparaison directe). `welcome_block` ne révèle PAS qu'il y a 2 variantes.
+
+**Benchmark** (`benchmark_type: "internal" | "competitive"`) :
+```json
+{
+  "study_type": "unmoderated_usability",
+  "test_design": "benchmark",
+  "benchmark_type": "internal | competitive",
+  "standard_scales": ["SUS", "UMUX-Lite"],
+  "benchmark_context": "string",
+  "products": [{
+    "name": "string",
+    "role": "our_product | competitor | previous_version",
+    "tasks": [{ "task": "string", "screen_text": "string", "starting_url": "string", "automated_metrics": [...] }],
+    "post_product_questions": [{ "text": "string", "modality": "string" }]
+  }],
+  "welcome_block": { "screen_text": "string" },
+  "closing_block": { "screen_text": "string" },
+  "screener_questions": ["string"],
+  "analysis_guide": "string"
+}
+```
+> Les tâches sont standardisées (même `screen_text`, `starting_url` différent). `post_product_questions` inclut les 10 items SUS complets et/ou les 2 items UMUX-Lite. `analysis_guide` contient la formule de calcul SUS.
+
+#### `survey`
+```json
+{
+  "study_type": "survey",
+  "title": "string",
+  "estimated_duration_minutes": 8,
+  "blocks": [{
+    "type": "screening | intro | scale_nps | scale_sus | scale_umux | likert | open | demographic",
+    "title": "string",
+    "questions": [{ "text": "string", "modality": "string", "options": ["string"] }]
+  }]
 }
 ```
 
 ---
 
-## Use case 3 — Analyseur de résultats
+## Use case 2 — Brief Builder (à implémenter)
 
-**Inputs acceptés** : CSV (Maze, UserTesting, Typeform…), fichier texte/markdown (notes de sessions, verbatims), ou texte collé directement.
+**Export** : `.pptx` (8–10 slides)
 
-**Exports** : `.xlsx` (tableau d'insights) + `.docx` (rapport synthèse)
+---
 
-### Schéma JSON de sortie
-```json
-{
-  "summary": "string",
-  "key_findings": [
-    {
-      "finding": "string",
-      "severity": "critical | major | minor",
-      "frequency": "string",
-      "verbatims": ["string"],
-      "recommendation": "string"
-    }
-  ],
-  "patterns": ["string"],
-  "metrics": {
-    "task_completion_rate": "string",
-    "average_satisfaction": "string",
-    "nps": "string"
-  },
-  "next_steps": ["string"]
-}
-```
+## Use case 3 — Analyseur de résultats (à implémenter)
+
+**Inputs acceptés** : CSV, texte/markdown, verbatims collés directement.
+**Exports** : `.xlsx` + `.docx`

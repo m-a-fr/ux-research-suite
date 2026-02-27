@@ -1,7 +1,7 @@
 import { StudyType } from "@/lib/types/protocol";
 import { moderatedUsabilityPrompt } from "./moderated_usability";
 import { exploratoryInterviewPrompt } from "./exploratory_interview";
-import { unmoderatedUsabilityPrompt } from "./unmoderated_usability";
+import { unmoderatedMonadicPrompt, unmoderatedABPrompt, unmoderatedBenchmarkPrompt } from "./unmoderated_usability";
 import { surveyPrompt } from "./survey";
 import { diaryStudyPrompt } from "./diary_study";
 
@@ -40,14 +40,29 @@ Règles importantes :
 - "behavioral_metrics" : métriques collectées automatiquement par l'outil (taux de complétion, temps sur tâche, clics, erreurs). Tableau de strings simples.
 - "success_criteria" : critère global de réussite de la tâche (une phrase synthétique).`;
 
-export function getSystemPrompt(studyType: StudyType): string {
+export function getSystemPrompt(studyType: StudyType, testDesign?: string): string {
+  // Unmoderated dispatches by test design
+  if (studyType === "unmoderated_usability") {
+    if (testDesign === "ab") return unmoderatedABPrompt;
+    if (testDesign === "benchmark") return unmoderatedBenchmarkPrompt;
+    return unmoderatedMonadicPrompt;
+  }
+
   const promptMap: Record<StudyType, string> = {
     moderated_usability: moderatedUsabilityPrompt,
     exploratory_interview: exploratoryInterviewPrompt,
-    unmoderated_usability: unmoderatedUsabilityPrompt,
+    unmoderated_usability: unmoderatedMonadicPrompt,
     survey: surveyPrompt,
     diary_study: diaryStudyPrompt,
   };
 
+  // These types embed their own schema — skip the generic reminder
+  if (
+    studyType === "exploratory_interview" ||
+    studyType === "survey" ||
+    studyType === "moderated_usability"
+  ) {
+    return promptMap[studyType];
+  }
   return promptMap[studyType] + JSON_SCHEMA_REMINDER;
 }

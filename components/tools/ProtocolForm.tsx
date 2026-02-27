@@ -13,24 +13,9 @@ import {
   FormLabel,
   FormMessage,
 } from "@/components/ui/form";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
-
-const STUDY_TYPE_OPTIONS: { value: StudyType; label: string }[] = [
-  { value: "moderated_usability", label: "Test d'utilisabilité modéré" },
-  { value: "exploratory_interview", label: "Entretien exploratoire" },
-  { value: "unmoderated_usability", label: "Test d'utilisabilité non-modéré" },
-  { value: "survey", label: "Sondage / Survey" },
-  { value: "diary_study", label: "Diary Study" },
-];
 
 const OBJECTIVE_TIPS = [
   {
@@ -43,25 +28,29 @@ const OBJECTIVE_TIPS = [
     icon: "🔍",
     title: "Sous-objectifs",
     desc: "2 à 3 questions spécifiques auxquelles l'étude doit répondre.",
-    example: "Ex : Identifier les frictions à l'étape paiement. Évaluer la clarté des options de livraison.",
+    example:
+      "Ex : Identifier les frictions à l'étape paiement. Évaluer la clarté des options de livraison.",
   },
   {
     icon: "📦",
     title: "Contexte produit",
     desc: "Produit concerné, phase (discovery, validation, post-lancement) et enjeu business.",
-    example: "Ex : App mobile e-commerce v2, phase post-lancement, objectif réduction du taux d'abandon.",
+    example:
+      "Ex : App mobile e-commerce v2, phase post-lancement, objectif réduction du taux d'abandon.",
   },
   {
     icon: "⚠️",
     title: "Contraintes",
     desc: "Limites à respecter : temps, budget, accès aux participants, outils imposés, contraintes légales.",
-    example: "Ex : Pas d'accès direct aux clients, outil Maze imposé, RGPD à respecter.",
+    example:
+      "Ex : Pas d'accès direct aux clients, outil Maze imposé, RGPD à respecter.",
   },
   {
     icon: "📐",
     title: "Structure attendue",
     desc: "Méthodologie, livrables ou format de restitution déjà définis.",
-    example: "Ex : Rapport synthèse + présentation stakeholders, format UX review interne.",
+    example:
+      "Ex : Rapport synthèse + présentation stakeholders, format UX review interne.",
   },
 ];
 
@@ -87,41 +76,26 @@ function ObjectiveTips() {
 }
 
 const formSchema = z.object({
-  studyType: z.enum([
-    "exploratory_interview",
-    "moderated_usability",
-    "unmoderated_usability",
-    "survey",
-    "diary_study",
-  ]),
   objective: z.string().min(10, "L'objectif doit faire au moins 10 caractères"),
   audience: z.string().min(3, "L'audience cible est requise"),
-  duration: z.coerce
-    .number()
-    .int()
-    .min(15, "Minimum 15 minutes")
-    .max(480, "Maximum 480 minutes"),
-  participants: z.coerce
-    .number()
-    .int()
-    .min(1, "Minimum 1 participant")
-    .max(500, "Maximum 500 participants"),
+  duration: z.coerce.number().int().min(15, "Minimum 15 minutes").max(480, "Maximum 480 minutes"),
+  participants: z.coerce.number().int().min(1, "Minimum 1 participant").max(500, "Maximum 500"),
 });
 
 type FormSchema = z.infer<typeof formSchema>;
 
 interface ProtocolFormProps {
+  studyType: Exclude<StudyType, "exploratory_interview">;
   onSubmit: (values: ProtocolFormValues) => void;
   isLoading: boolean;
 }
 
-export function ProtocolForm({ onSubmit, isLoading }: ProtocolFormProps) {
+export function ProtocolForm({ studyType, onSubmit, isLoading }: ProtocolFormProps) {
   const [showTips, setShowTips] = useState(false);
 
   const form = useForm<FormSchema>({
     resolver: zodResolver(formSchema) as Resolver<FormSchema>,
     defaultValues: {
-      studyType: "moderated_usability",
       objective: "",
       audience: "",
       duration: 60,
@@ -130,37 +104,12 @@ export function ProtocolForm({ onSubmit, isLoading }: ProtocolFormProps) {
   });
 
   function handleSubmit(values: FormSchema) {
-    onSubmit(values as ProtocolFormValues);
+    onSubmit({ ...values, studyType } as ProtocolFormValues);
   }
 
   return (
     <Form {...form}>
       <form onSubmit={form.handleSubmit(handleSubmit)} className="space-y-5">
-        <FormField
-          control={form.control}
-          name="studyType"
-          render={({ field }) => (
-            <FormItem>
-              <FormLabel>Type d&apos;étude</FormLabel>
-              <Select onValueChange={field.onChange} defaultValue={field.value}>
-                <FormControl>
-                  <SelectTrigger>
-                    <SelectValue placeholder="Sélectionner un type" />
-                  </SelectTrigger>
-                </FormControl>
-                <SelectContent>
-                  {STUDY_TYPE_OPTIONS.map((opt) => (
-                    <SelectItem key={opt.value} value={opt.value}>
-                      {opt.label}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-              <FormMessage />
-            </FormItem>
-          )}
-        />
-
         <FormField
           control={form.control}
           name="objective"
