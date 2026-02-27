@@ -18,6 +18,22 @@ function san(text: string): string {
     .replace(/[^\x00-\xFF]/g, (c) => `[U+${c.codePointAt(0)!.toString(16).toUpperCase()}]`);
 }
 
+// Deep-sanitize every string in the Brief tree before touching pptxgenjs.
+// Calling san() on individual addText() calls is not enough because
+// addNotes() and pptx metadata share the same btoa() encoding path.
+function deepSan<T>(obj: T): T {
+  if (typeof obj === "string") return san(obj) as unknown as T;
+  if (Array.isArray(obj)) return obj.map(deepSan) as unknown as T;
+  if (obj !== null && typeof obj === "object") {
+    const out: Record<string, unknown> = {};
+    for (const [k, v] of Object.entries(obj as Record<string, unknown>)) {
+      out[k] = deepSan(v);
+    }
+    return out as T;
+  }
+  return obj;
+}
+
 // ─── Design tokens ─────────────────────────────────────────────────────────
 
 const W = 10;
@@ -417,10 +433,15 @@ const RENDERERS: Record<string, Renderer> = {
 
 // ─── Main export ───────────────────────────────────────────────────────────
 
-export async function generateBriefPptx(brief: Brief): Promise<Buffer> {
+export async function generateBriefPptx(rawBrief: Brief): Promise<Buffer> {
+  // Sanitize every string in the Brief before any pptxgenjs call.
+  // This is the only reliable way to guarantee btoa()-safe content,
+  // including speaker_notes and any nested field we might miss otherwise.
+  const brief = deepSan(rawBrief);
+
   const pptx = new PptxGenJS();
   pptx.layout = "LAYOUT_16x9";
-  pptx.title = san(brief.project_title);
+  pptx.title = brief.project_title;
   pptx.subject = "Brief stakeholders -- User Research Suite";
   pptx.author = "User Research Suite";
 
