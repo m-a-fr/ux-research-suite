@@ -25,12 +25,12 @@ Outil web open-source propulsé par **Claude AI** pour automatiser les tâches r
 
 User Research Suite permet aux UX researchers de générer en quelques secondes des livrables structurés et professionnels habituellement chronophages à produire. L'interface est entièrement en français.
 
-**Statut actuel : Sprint 1 terminé — Use case 1 fonctionnel**
+**Statut actuel : Sprint 2 terminé — Use cases 1 & 2 fonctionnels**
 
 | Outil | Statut |
 |---|---|
 | Générateur de protocole | ✅ Disponible |
-| Brief Builder (slides stakeholders) | 🔜 À venir |
+| Brief Builder (slides stakeholders) | ✅ Disponible |
 | Analyseur de résultats | 🔜 À venir |
 
 ---
@@ -209,8 +209,10 @@ ANTHROPIC_API_KEY=sk-ant-...
   /api
     /generate-protocol/   → POST — streaming Claude → JSON protocol
     /export-protocol/     → POST — génération DOCX → téléchargement
+    /generate-brief/      → POST — streaming Claude → JSON brief (9 slides)
+    /export-brief/        → POST — génération PPTX → téléchargement
   /tools
-    /protocol-generator/  → Use case 1 : page formulaire + preview
+    /protocol-generator/  → Use case 1 + 2 : protocole + brief inline
   layout.tsx              → Layout racine + header de navigation
   page.tsx                → Landing page (3 cards outils)
   globals.css             → Variables CSS Tailwind v4 + shadcn
@@ -218,25 +220,31 @@ ANTHROPIC_API_KEY=sk-ant-...
 /components
   /ui/                    → Composants shadcn/ui (button, card, form…)
   /tools/
-    ProtocolForm.tsx      → Formulaire de saisie (react-hook-form + Zod)
-    ProtocolPreview.tsx   → Rendu structuré du protocole généré
+    ExploratoryForm.tsx / ExploratoryPreview.tsx
+    SurveyForm.tsx / SurveyPreview.tsx
+    ModeratedForm.tsx / ModeratedPreview.tsx
+    UnmoderatedForm.tsx / UnmoderatedPreview.tsx
+    BriefPreview.tsx      → Grille 3×3 de slides + streaming progress
 
 /lib
   /types/
     protocol.ts           → Interfaces TypeScript partagées
+    exploratory.ts / survey.ts / moderated.ts / unmoderated.ts
+    brief.ts              → Brief, BriefSlide, BriefSlideType
   /prompts/
-    index.ts              → Dispatcher getSystemPrompt(studyType)
-    moderated_usability.ts
-    exploratory_interview.ts
-    unmoderated_usability.ts
-    survey.ts
-    diary_study.ts
+    index.ts              → Dispatcher getSystemPrompt(studyType, testDesign?)
+    exploratory_interview.ts / moderated_usability.ts
+    unmoderated_usability.ts / survey.ts / diary_study.ts
+    brief.ts              → BRIEF_SYSTEM_PROMPT (9 slides, schéma JSON)
   /exporters/
-    docx.ts               → Générateur DOCX server-side (docx library)
+    docx-exploratory.ts / docx-survey.ts
+    docx-moderated.ts / docx-unmoderated.ts
+    pptx-brief.ts         → generateBriefPptx() — server-side (pptxgenjs)
 ```
 
-### Types TypeScript principaux (`/lib/types/protocol.ts`)
+### Types TypeScript principaux
 
+**`/lib/types/protocol.ts`**
 ```typescript
 type StudyType =
   | "exploratory_interview"
@@ -244,31 +252,28 @@ type StudyType =
   | "unmoderated_usability"
   | "survey"
   | "diary_study";
+```
 
-interface Protocol {
-  study_type: StudyType;
+**`/lib/types/brief.ts`**
+```typescript
+type BriefSlideType =
+  | "cover" | "context" | "objectives" | "methodology"
+  | "participants" | "timeline" | "deliverables" | "decisions" | "next_steps";
+
+interface BriefSlide {
+  slide_number: number;
+  type: BriefSlideType;
   title: string;
-  duration_minutes: number;
-  sections: ProtocolSection[];
-  tasks: ProtocolTask[];
-  observer_guide: string;
-  consent_note: string;
-  materials_needed: string[];
+  body?: string;
+  bullets: string[];
+  speaker_notes: string;
 }
 
-interface ProtocolSection {
-  type: "intro" | "warmup" | "tasks" | "debrief";
-  title: string;
-  duration_minutes: number;
-  script: string;
-  questions: string[];
-  tips: string;
-}
-
-interface ProtocolTask {
-  task: string;
-  scenario: string;
-  success_criteria: string;
+interface Brief {
+  source_study_type: string;
+  project_title: string;
+  generated_date: string; // ISO date
+  slides: BriefSlide[];   // 9 slides fixes
 }
 ```
 
@@ -278,66 +283,48 @@ interface ProtocolTask {
 
 ### Use case 1 — Générateur de protocole ✅
 
-**Inputs (formulaire)**
-
-| Champ | Type | Contraintes |
-|---|---|---|
-| Type d'étude | Select | 5 options |
-| Objectif de recherche | Textarea | min. 10 caractères |
-| Audience cible | Input | min. 3 caractères |
-| Durée (minutes) | Number | 15 – 480 |
-| Nombre de participants | Number | 1 – 500 |
-
 **Types d'étude supportés**
 
-| Valeur | Label |
-|---|---|
-| `moderated_usability` | Test d'utilisabilité modéré |
-| `exploratory_interview` | Entretien exploratoire |
-| `unmoderated_usability` | Test d'utilisabilité non-modéré |
-| `survey` | Sondage / Survey |
-| `diary_study` | Diary Study |
+| Valeur | Label | Export |
+|---|---|---|
+| `exploratory_interview` | Entretien exploratoire | `.docx` |
+| `moderated_usability` | Test d'utilisabilité modéré | `.docx` |
+| `unmoderated_usability` | Test non-modéré (monadic / A-B / benchmark) | `.docx` |
+| `survey` | Sondage / Survey | `.docx` |
+| `diary_study` | Diary Study | 🚧 désactivé |
+
+Chaque type d'étude possède son propre formulaire (react-hook-form + Zod), son prompt système et son exporter DOCX. L'unmoderated usability supporte 3 designs discriminés : `monadic`, `ab` (within ou between-subjects) et `benchmark` (interne ou compétitif).
 
 **Output**
 
-- Preview structuré en temps réel (streaming) avec sections, tâches, guide observateur
+- Preview structuré en temps réel (streaming) avec barre de progression par stage
 - Export `.docx` téléchargeable
-
-**Schéma JSON retourné par Claude**
-
-```json
-{
-  "study_type": "moderated_usability",
-  "title": "string",
-  "duration_minutes": 60,
-  "sections": [
-    {
-      "type": "intro | warmup | tasks | debrief",
-      "title": "string",
-      "duration_minutes": 5,
-      "script": "string",
-      "questions": ["string"],
-      "tips": "string"
-    }
-  ],
-  "tasks": [
-    {
-      "task": "string",
-      "scenario": "string",
-      "success_criteria": "string"
-    }
-  ],
-  "observer_guide": "string",
-  "consent_note": "string",
-  "materials_needed": ["string"]
-}
-```
 
 ---
 
-### Use case 2 — Brief Builder 🔜
+### Use case 2 — Brief Builder ✅
 
-Génération de slides de brief stakeholders au format `.pptx` (8–10 slides : cover → contexte → objectifs → méthodologie → participants → planning → décisions attendues → next steps).
+Génération de slides de brief stakeholders au format `.pptx` **directement depuis le protocole généré** — sans formulaire supplémentaire. Un bouton "Créer le brief stakeholders" apparaît une fois le protocole prêt.
+
+**9 slides fixes**
+
+| # | Type | Contenu |
+|---|---|---|
+| 1 | `cover` | Titre, sous-titre, date |
+| 2 | `context` | Enjeux business, pourquoi cette étude |
+| 3 | `objectives` | Questions de recherche reformulées en enjeux décisionnels |
+| 4 | `methodology` | Méthode choisie + justification ROI |
+| 5 | `participants` | Profils, critères, mode de recrutement |
+| 6 | `timeline` | Phases et jalons (recrutement → restitution) |
+| 7 | `deliverables` | Livrables concrets attendus |
+| 8 | `decisions` | Décisions que les résultats permettront de prendre |
+| 9 | `next_steps` | Actions immédiates avec responsables |
+
+**Output**
+
+- Grille 3×3 de cartes slides avec preview des bullets
+- Speaker notes natives PowerPoint (visibles en mode présentateur)
+- Export `.pptx` téléchargeable (mise en page 16:9, palette navy/blue)
 
 ---
 
@@ -353,12 +340,16 @@ Analyse de fichiers CSV (Maze, UserTesting, Typeform…), notes de sessions ou v
 
 Génère un protocole UX via Claude AI avec streaming.
 
-**Request body**
+**Request body** — varie selon `studyType`. Exemple pour `moderated_usability` :
 
 ```json
 {
   "studyType": "moderated_usability",
   "objective": "Comprendre comment les utilisateurs...",
+  "product_name": "Mon produit",
+  "platform": "web",
+  "fidelity": "live_product",
+  "think_aloud": "concurrent",
   "audience": "Acheteurs en ligne, 25-45 ans",
   "duration": 60,
   "participants": 5
@@ -387,9 +378,7 @@ Génère et télécharge le protocole au format Word.
 **Request body**
 
 ```json
-{
-  "protocol": { ...objet Protocol complet... }
-}
+{ "protocol": { ...objet Protocol complet... } }
 ```
 
 **Response** — `application/vnd.openxmlformats-officedocument.wordprocessingml.document`
@@ -406,38 +395,94 @@ Fichier `.docx` en téléchargement direct.
 
 ---
 
+### `POST /api/generate-brief`
+
+Génère un brief stakeholders en 9 slides à partir d'un protocole existant, avec streaming.
+
+**Request body**
+
+```json
+{ "protocol": { ...objet Protocol complet (n'importe quel type)... } }
+```
+
+**Response** — `text/plain` (streaming)
+
+Flux de texte contenant le JSON brut du brief, streamé caractère par caractère.
+En cas d'erreur : le flux se termine par `\n__ERROR__:<message>`.
+
+**Erreurs**
+
+| Code | Cas |
+|---|---|
+| `400` | Corps de requête invalide |
+| `422` | Protocole manquant (`title` ou `study_type` absent) |
+| `200` + `__ERROR__` | Erreur Claude pendant le stream |
+
+---
+
+### `POST /api/export-brief`
+
+Génère et télécharge le brief au format PowerPoint.
+
+**Request body**
+
+```json
+{ "brief": { ...objet Brief complet... } }
+```
+
+**Response** — `application/vnd.openxmlformats-officedocument.presentationml.presentation`
+
+Fichier `.pptx` en téléchargement direct (9 slides, layout 16:9, speaker notes natifs).
+
+**Erreurs**
+
+| Code | Cas |
+|---|---|
+| `400` | Corps invalide |
+| `422` | Brief manquant ou incomplet |
+| `500` | Erreur lors de la génération PPTX |
+
+---
+
 ## Flux de données
 
 ```
 Utilisateur
     │
     ▼
-ProtocolForm (react-hook-form + Zod)
+<Type>Form (react-hook-form + Zod)
     │ POST JSON
     ▼
 /api/generate-protocol
-    │ getSystemPrompt(studyType)
+    │ getSystemPrompt(studyType, testDesign?)
     │ anthropic.messages.stream(claude-sonnet-4-6, max_tokens: 8192)
     ▼
 ReadableStream → chunks text/plain
     │
     ▼
 Client (page.tsx)
-    │ accumule le buffer
-    │ JSON.parse() sur le texte complet
+    │ accumule streamBuffer → JSON.parse()
     ▼
-ProtocolPreview
-    │ FormattedText (rendu listes/gras/paragraphes)
+<Type>Preview (streaming stage detection)
     │
-    ├── [clic export]
-    │       │ POST /api/export-protocol
+    ├── [clic Télécharger .docx]
+    │       │ POST /api/export-protocol { protocol }
     │       ▼
-    │   generateProtocolDocx() → Buffer → Uint8Array
-    │       │
-    │       ▼
-    │   Téléchargement .docx
-    ▼
-Fin
+    │   generate<Type>Docx() → Buffer → Uint8Array → .docx
+    │
+    └── [clic Créer le brief]
+            │ POST /api/generate-brief { protocol }
+            │ anthropic.messages.stream(claude-sonnet-4-6, max_tokens: 4096)
+            ▼
+        ReadableStream → chunks text/plain
+            │ accumule briefStreamBuffer → JSON.parse()
+            ▼
+        BriefPreview (grille 3×3 slides)
+            │
+            └── [clic Télécharger .pptx]
+                    │ POST /api/export-brief { brief }
+                    ▼
+                generateBriefPptx() → Buffer → Uint8Array → .pptx
 ```
 
 ---
@@ -473,14 +518,21 @@ Le répertoire "Mehdi Next" contient des espaces et majuscules, invalides pour n
 
 ## Roadmap
 
-### Sprint 2 — Brief Builder
-- [ ] Formulaire inputs (projet, objectifs business, questions de recherche, timeline…)
-- [ ] Route `/api/generate-brief` avec streaming
-- [ ] Composants `BriefForm` + `BriefPreview`
-- [ ] Exporter `/lib/exporters/pptx.ts`
-- [ ] Route `/api/export-brief`
+### Sprint 1 — Générateur de protocole ✅
+- [x] Architecture par type d'étude (exploratory, moderated, unmoderated×3, survey)
+- [x] Routes `/api/generate-protocol` + `/api/export-protocol`
+- [x] Composants `<Type>Form` + `<Type>Preview` par type
+- [x] Exporters DOCX server-side par type
+- [x] Streaming avec détection de stages et barre de progression
 
-### Sprint 3 — Analyseur de résultats
+### Sprint 2 — Brief Builder ✅
+- [x] Route `/api/generate-brief` avec streaming (depuis n'importe quel protocole)
+- [x] Route `/api/export-brief` → `.pptx` 9 slides
+- [x] Composant `BriefPreview` (grille 3×3 + streaming progress)
+- [x] Exporter `pptx-brief.ts` (cover navy, slides contenu, speaker notes natifs)
+- [x] Intégration inline dans le générateur de protocole
+
+### Sprint 3 — Analyseur de résultats 🔜
 - [ ] Upload fichiers CSV / texte (Maze, UserTesting, Typeform)
 - [ ] Chunking 3000 tokens max avant envoi Claude
 - [ ] Route `/api/analyze-results` avec streaming
