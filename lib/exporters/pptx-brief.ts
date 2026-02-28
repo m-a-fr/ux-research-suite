@@ -43,6 +43,42 @@ function parseBullet(text: string): { primary: string; secondary: string | null 
   return { primary: text, secondary: null };
 }
 
+// ─── Duration parser ─────────────────────────────────────────────────────────
+// Extracts a numeric weight from French/English duration strings.
+// Used by timeline-bars to compute proportional Gantt bar widths.
+// Runs on the secondary part of a bullet first ("Phase -- 2 semaines").
+
+function parseDuration(text: string): number {
+  const m = text.match(/(\d+(?:[.,]\d+)?)\s*(semaine|week|mois|month|jour|day)/i);
+  if (!m) return 1;
+  const val = parseFloat(m[1].replace(",", "."));
+  const unit = m[2].toLowerCase();
+  if (unit.startsWith("mois") || unit.startsWith("month")) return val * 20;
+  if (unit.startsWith("semaine") || unit.startsWith("week")) return val * 5;
+  return val;
+}
+
+// ─── Metric parser ───────────────────────────────────────────────────────────
+// Extracts a leading number+unit and a label from "42% -- Taux d'abandon" bullets.
+
+function parseMetric(text: string): { value: string; label: string } | null {
+  const { primary, secondary } = parseBullet(text);
+  if (secondary !== null) {
+    const m = primary.match(/^(\d+(?:[.,]\d+)?)\s*([a-zA-Z%]{0,4})\s*$/);
+    if (m) {
+      const value = (m[1] + m[2]).trim();
+      return { value, label: secondary };
+    }
+  }
+  // Fallback: "42% Taux d'abandon" without separator
+  const m2 = text.match(/^(\d+(?:[.,]\d+)?)\s*([a-zA-Z%]{0,4})\s+(.{4,})$/);
+  if (m2) {
+    const value = (m2[1] + m2[2]).trim();
+    return { value, label: m2[3].trim() };
+  }
+  return null;
+}
+
 // ─── Design tokens ─────────────────────────────────────────────────────────
 
 const W = 10;
@@ -471,6 +507,303 @@ function renderInsightBoxes(pptx: PptxGenJS, slide: BriefSlide, acc: string, lig
   ps.addNotes(san(slide.speaker_notes));
 }
 
+// ─── LAYOUT: CHEVRON FLOW ──────────────────────────────────────────────────
+// Connected chevron arrows for ordered sequential phases (2–6 items).
+// Falls back to an inline list for <2 or >6 items.
+
+function renderChevronFlow(pptx: PptxGenJS, slide: BriefSlide, acc: string, light: string, bg: string): void {
+  const ps = pptx.addSlide();
+  drawBg(ps, pptx, bg);
+  drawHeader(ps, pptx, slide, acc);
+  const cY = drawBody(ps, pptx, slide, acc, light);
+
+  const bullets = slide.bullets;
+  const n = bullets.length;
+
+  if (n < 2 || n > 6) {
+    // Inline list fallback
+    const itemH = Math.min((CE - cY) / Math.max(n, 1), 0.9);
+    bullets.forEach((b, i) => {
+      const by = cY + i * itemH;
+      ps.addShape(pptx.ShapeType.rect, { x: 0.4, y: by + 0.1, w: 0.055, h: itemH - 0.22, fill: { color: acc }, line: { color: acc } });
+      ps.addText(san(b), { x: 0.6, y: by, w: W - 1.05, h: itemH, fontSize: 11, color: TEXT, valign: "middle" });
+    });
+    ps.addNotes(san(slide.speaker_notes));
+    return;
+  }
+
+  const MX = 0.4;
+  const availW = W - MX * 2;
+  const contentH = CE - cY;
+  const chevronH = Math.min(contentH * 0.7, 1.5);
+  const topY = cY + (contentH - chevronH) / 2;
+  const overlap = chevronH * 0.22;
+  const chevronW = (availW + (n - 1) * overlap) / n;
+  const step = chevronW - overlap;
+
+  const FLOW_COLORS = ["1E3A5F", "1D4ED8", "2563EB", "3B82F6", "60A5FA", "93C5FD"];
+
+  bullets.forEach((b, i) => {
+    const cx = MX + i * step;
+    const { primary, secondary } = parseBullet(b);
+    // Safe text zone: skip left notch (for i > 0) and right arrow tip (for last)
+    const safeX = cx + (i > 0 ? overlap * 0.45 : 0.1);
+    const safeW = step - (i === n - 1 ? overlap * 0.4 : 0) - 0.12;
+
+    ps.addShape(pptx.ShapeType.chevron, {
+      x: cx, y: topY, w: chevronW, h: chevronH,
+      fill: { color: FLOW_COLORS[i] }, line: { color: WHITE, pt: 1.2 },
+    });
+
+    ps.addText(String(i + 1), {
+      x: safeX, y: topY + 0.07, w: safeW, h: 0.46,
+      fontSize: n <= 4 ? 18 : 14, bold: true, color: WHITE, align: "center",
+    });
+
+    ps.addText(san(primary), {
+      x: safeX, y: topY + 0.57, w: safeW, h: chevronH - 0.65,
+      fontSize: n <= 3 ? 9.5 : n === 4 ? 8.5 : 7.5,
+      color: WHITE, align: "center", valign: "top",
+    });
+
+    if (secondary) {
+      ps.addText(san(secondary), {
+        x: safeX, y: topY + chevronH + 0.06, w: safeW,
+        h: Math.max(contentH - chevronH - 0.12, 0.28),
+        fontSize: 7.5, color: NAVY, align: "center", valign: "top",
+      });
+    }
+  });
+
+  ps.addNotes(san(slide.speaker_notes));
+}
+
+// ─── LAYOUT: TIMELINE BARS ─────────────────────────────────────────────────
+// Gantt-style horizontal bars — label column left, proportional bars right.
+// Expects "Phase -- Durée" bullet format for proportional sizing; falls back
+// to equal-width bars when no duration is detected.
+
+function renderTimelineBars(pptx: PptxGenJS, slide: BriefSlide, acc: string, light: string, bg: string): void {
+  const ps = pptx.addSlide();
+  drawBg(ps, pptx, bg);
+  drawHeader(ps, pptx, slide, acc);
+  const cY = drawBody(ps, pptx, slide, acc, light);
+
+  const bullets = slide.bullets;
+  const n = bullets.length;
+  const MX = 0.4;
+  const LABEL_W = 2.9;
+  const BAR_X = MX + LABEL_W + 0.14;
+  const BAR_AREA_W = W - BAR_X - MX;
+  const GAP = 0.1;
+  const availH = CE - cY - 0.04;
+  const rowH = Math.min((availH - GAP * (n - 1)) / Math.max(n, 1), 0.84);
+  const barH = rowH * 0.5;
+
+  // Parse durations from secondary (preferred) or primary
+  const durations = bullets.map((b) => {
+    const { primary, secondary } = parseBullet(b);
+    return parseDuration(secondary ?? primary);
+  });
+  const totalDur = durations.reduce((a, d) => a + d, 0) || n;
+
+  let cumOffset = 0;
+  bullets.forEach((b, i) => {
+    const rowY = cY + i * (rowH + GAP);
+    const { primary, secondary } = parseBullet(b);
+    const dur = durations[i];
+    const barW = Math.max((dur / totalDur) * BAR_AREA_W, 0.3);
+    const barStartX = BAR_X + (cumOffset / totalDur) * BAR_AREA_W;
+    const barY = rowY + (rowH - barH) / 2;
+
+    // Alternating row tint
+    if (i % 2 === 1) {
+      ps.addShape(pptx.ShapeType.rect, {
+        x: MX, y: rowY, w: W - MX * 2, h: rowH,
+        fill: { color: light }, line: { color: light },
+      });
+    }
+
+    ps.addText(san(primary), {
+      x: MX + 0.05, y: rowY, w: LABEL_W - 0.08, h: rowH,
+      fontSize: 10, bold: true, color: NAVY, valign: "middle",
+    });
+
+    // Track background
+    ps.addShape(pptx.ShapeType.rect, {
+      x: BAR_X, y: barY, w: BAR_AREA_W, h: barH,
+      fill: { color: "E2E8F0" }, line: { color: "CBD5E1", pt: 0.5 },
+    });
+
+    // Phase bar
+    ps.addShape(pptx.ShapeType.rect, {
+      x: barStartX, y: barY, w: barW, h: barH,
+      fill: { color: acc }, line: { color: acc },
+    });
+
+    if (secondary) {
+      ps.addText(san(secondary), {
+        x: barStartX + 0.06, y: barY, w: Math.max(barW - 0.1, 0.4), h: barH,
+        fontSize: 8.5, color: WHITE, valign: "middle",
+      });
+    }
+
+    cumOffset += dur;
+  });
+
+  ps.addNotes(san(slide.speaker_notes));
+}
+
+// ─── LAYOUT: SPLIT HIGHLIGHT ───────────────────────────────────────────────
+// First bullet as full-width accent hero box + remaining bullets as a compact list.
+
+function renderSplitHighlight(pptx: PptxGenJS, slide: BriefSlide, acc: string, light: string, bg: string): void {
+  const ps = pptx.addSlide();
+  drawBg(ps, pptx, bg);
+  drawHeader(ps, pptx, slide, acc);
+
+  const bullets = slide.bullets;
+  if (bullets.length === 0) {
+    ps.addNotes(san(slide.speaker_notes));
+    return;
+  }
+
+  const contentH = CE - CS;
+  const heroH = contentH * 0.38;
+  const listY = CS + heroH + 0.1;
+  const listH = CE - listY;
+
+  const [hero, ...rest] = bullets;
+  const { primary: heroPrimary, secondary: heroSecondary } = parseBullet(hero);
+
+  // Hero accent banner
+  ps.addShape(pptx.ShapeType.rect, { x: 0.4, y: CS, w: W - 0.8, h: heroH, fill: { color: acc }, line: { color: acc } });
+  ps.addShape(pptx.ShapeType.rect, { x: 0.4, y: CS, w: 0.1, h: heroH, fill: { color: light }, line: { color: light } });
+
+  if (heroSecondary) {
+    ps.addText(san(heroPrimary), {
+      x: 0.65, y: CS + 0.04, w: W - 1.15, h: heroH * 0.54,
+      fontSize: 13, bold: true, color: WHITE, valign: "bottom",
+    });
+    ps.addText(san(heroSecondary), {
+      x: 0.65, y: CS + heroH * 0.54, w: W - 1.15, h: heroH * 0.38,
+      fontSize: 10, color: light, valign: "top",
+    });
+  } else {
+    ps.addText(san(heroPrimary), {
+      x: 0.65, y: CS, w: W - 1.15, h: heroH,
+      fontSize: 13, bold: true, color: WHITE, valign: "middle",
+    });
+  }
+
+  if (rest.length === 0) {
+    ps.addNotes(san(slide.speaker_notes));
+    return;
+  }
+
+  // Secondary list
+  const n = rest.length;
+  const itemH = Math.min(listH / Math.max(n, 1), 0.84);
+
+  rest.forEach((b, i) => {
+    const by = listY + i * itemH;
+    const { primary, secondary } = parseBullet(b);
+    const dotD = 0.1;
+
+    ps.addShape(pptx.ShapeType.ellipse, {
+      x: 0.44, y: by + (itemH - dotD) / 2, w: dotD, h: dotD,
+      fill: { color: acc }, line: { color: acc },
+    });
+
+    if (secondary) {
+      ps.addText(san(primary), {
+        x: 0.67, y: by + 0.04, w: W - 1.12, h: itemH * 0.52,
+        fontSize: 10.5, bold: true, color: NAVY, valign: "bottom",
+      });
+      ps.addText(san(secondary), {
+        x: 0.67, y: by + itemH * 0.52, w: W - 1.12, h: itemH * 0.42,
+        fontSize: 9, color: TEXT, valign: "top",
+      });
+    } else {
+      ps.addText(san(b), {
+        x: 0.67, y: by, w: W - 1.12, h: itemH,
+        fontSize: 10.5, color: TEXT, valign: "middle",
+      });
+    }
+  });
+
+  ps.addNotes(san(slide.speaker_notes));
+}
+
+// ─── LAYOUT: METRIC TILES ──────────────────────────────────────────────────
+// Grid of white tiles with large numeric value + label strip at bottom.
+// Uses parseMetric() to extract value+unit; falls back to card-grid style
+// when no leading number is detected.
+
+function renderMetricTiles(pptx: PptxGenJS, slide: BriefSlide, acc: string, light: string, bg: string): void {
+  const ps = pptx.addSlide();
+  drawBg(ps, pptx, bg);
+  drawHeader(ps, pptx, slide, acc);
+  const cY = drawBody(ps, pptx, slide, acc, light);
+
+  const bullets = slide.bullets;
+  const n = bullets.length;
+  const COLS = n <= 2 ? n : Math.min(n, 3);
+  const ROWS = Math.ceil(n / COLS);
+  const MX = 0.4;
+  const GAP = 0.2;
+  const tileW = (W - MX * 2 - GAP * (COLS - 1)) / COLS;
+  const availH = CE - cY - 0.04;
+  const tileH = Math.min((availH - GAP * (ROWS - 1)) / ROWS, 1.88);
+  const totalH = ROWS * tileH + (ROWS - 1) * GAP;
+  const startY = cY + Math.max(0, (availH - totalH) / 2);
+
+  bullets.forEach((b, i) => {
+    const col = i % COLS;
+    const row = Math.floor(i / COLS);
+    const isLastAlone = n % COLS !== 0 && i === n - 1 && COLS > 1;
+    const tx = MX + col * (tileW + GAP);
+    const ty = startY + row * (tileH + GAP);
+    const thisW = isLastAlone ? W - MX * 2 : tileW;
+    const metric = parseMetric(b);
+    const LABEL_H = tileH * 0.32;
+
+    ps.addShape(pptx.ShapeType.rect, { x: tx, y: ty, w: thisW, h: tileH, fill: { color: WHITE }, line: { color: "CBD5E1", pt: 0.75 } });
+    ps.addShape(pptx.ShapeType.rect, { x: tx, y: ty, w: thisW, h: 0.1, fill: { color: acc }, line: { color: acc } });
+    ps.addShape(pptx.ShapeType.rect, { x: tx, y: ty + tileH - LABEL_H, w: thisW, h: LABEL_H, fill: { color: light }, line: { color: light } });
+
+    if (metric) {
+      ps.addText(san(metric.value), {
+        x: tx + 0.06, y: ty + 0.1, w: thisW - 0.12, h: tileH - LABEL_H - 0.1,
+        fontSize: 30, bold: true, color: acc, align: "center", valign: "middle",
+      });
+      ps.addText(san(metric.label), {
+        x: tx + 0.08, y: ty + tileH - LABEL_H, w: thisW - 0.16, h: LABEL_H,
+        fontSize: 9, color: NAVY, align: "center", valign: "middle",
+      });
+    } else {
+      const { primary, secondary } = parseBullet(b);
+      if (secondary) {
+        ps.addText(san(primary), {
+          x: tx + 0.1, y: ty + 0.12, w: thisW - 0.2, h: tileH - LABEL_H - 0.12,
+          fontSize: 11, bold: true, color: NAVY, align: "center", valign: "bottom",
+        });
+        ps.addText(san(secondary), {
+          x: tx + 0.08, y: ty + tileH - LABEL_H, w: thisW - 0.16, h: LABEL_H,
+          fontSize: 9, color: NAVY, align: "center", valign: "middle",
+        });
+      } else {
+        ps.addText(san(b), {
+          x: tx + 0.08, y: ty + 0.1, w: thisW - 0.16, h: tileH - 0.1,
+          fontSize: 11, color: TEXT, align: "center", valign: "middle",
+        });
+      }
+    }
+  });
+
+  ps.addNotes(san(slide.speaker_notes));
+}
+
 // ─── Layout dispatcher ─────────────────────────────────────────────────────
 
 type LayoutRenderer = (
@@ -482,12 +815,16 @@ type LayoutRenderer = (
 ) => void;
 
 const LAYOUT_RENDERERS: Record<string, LayoutRenderer> = {
-  list:           renderList,
-  "card-grid":    renderCardGrid,
-  "two-panel":    renderTwoPanel,
-  "row-cards":    renderRowCards,
-  "phase-blocks": renderPhaseBlocks,
-  "insight-boxes": renderInsightBoxes,
+  list:              renderList,
+  "card-grid":       renderCardGrid,
+  "two-panel":       renderTwoPanel,
+  "row-cards":       renderRowCards,
+  "phase-blocks":    renderPhaseBlocks,
+  "insight-boxes":   renderInsightBoxes,
+  "chevron-flow":    renderChevronFlow,
+  "timeline-bars":   renderTimelineBars,
+  "split-highlight": renderSplitHighlight,
+  "metric-tiles":    renderMetricTiles,
 };
 
 // ─── Main export ───────────────────────────────────────────────────────────

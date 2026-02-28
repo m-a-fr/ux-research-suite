@@ -413,7 +413,6 @@ export default function ProtocolGeneratorPage() {
                 </div>
                 <Button
                   onClick={handleGenerateBrief}
-                  disabled={briefState === "streaming"}
                   variant="default"
                   size="sm"
                   className="w-full"

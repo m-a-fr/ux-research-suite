@@ -97,6 +97,50 @@ La couleur d'accent est déterminée automatiquement par le type de slide — tu
 
 ---
 
+### \`chevron-flow\` — Flèches-chevrons connectées
+**Structure** : N flèches connectées de gauche à droite, dégradé bleu foncé → clair, numérotées
+**Quand l'utiliser** :
+- 3 à 5 étapes séquentielles avec un sens de progression marqué (gauche → droite)
+- Le contenu représente des phases qui s'enchaînent dans un ordre précis
+- Alternative plus visuelle à \`phase-blocks\` quand la direction et le flux comptent
+**Attention** : limité à 6 items maximum — au-delà, bascule automatiquement en liste verticale
+**Exemples** : calendrier d'étude (Recrutement → Terrain → Analyse → Restitution), processus en étapes
+
+---
+
+### \`timeline-bars\` — Barres Gantt horizontales
+**Structure** : colonne de labels à gauche + barres de durée proportionnelles à droite sur fond clair
+**Quand l'utiliser** :
+- Phases avec des durées explicites que l'on veut visualiser en proportions
+- Le calendrier doit être lisible sous forme de frise chronologique
+- 3 à 6 phases avec des durées hétérogènes (sinon \`chevron-flow\` est plus élégant)
+**Format bullets recommandé** : "Phase — Durée" (ex. "Recrutement — 1 semaine", "Terrain — 3 semaines")
+**Exemples** : planning de projet avec durées explicites, calendrier avec jalons datés
+
+---
+
+### \`split-highlight\` — Banner héro + liste secondaire
+**Structure** : boîte accent pleine largeur en haut (premier bullet en valeur) + liste compacte en dessous
+**Quand l'utiliser** :
+- Il y a UN message principal ou insight à mettre fortement en avant
+- Les bullets suivants sont des détails ou sous-points secondaires
+- Le premier bullet est nettement plus important que les autres
+**Format bullets** : premier bullet = message clé (avec ou sans séparateur), suivants = liste normale
+**Exemples** : slide avec une hypothèse centrale + sous-questions, résultat clé + éléments de contexte
+
+---
+
+### \`metric-tiles\` — Tuiles métriques
+**Structure** : grille de tuiles blanches avec grande valeur numérique en haut + bande label colorée en bas
+**Quand l'utiliser** :
+- Les bullets contiennent des indicateurs chiffrés clés (volumes, taux, durées)
+- 2 à 4 métriques à mettre en valeur côte à côte
+- Le contexte est quantitatif ou les stakeholders attendent des chiffres
+**Format bullets recommandé** : "Valeur — Label" (ex. "42% — Taux d'abandon", "15 — Participants recrutés")
+**Exemples** : livrables avec volumes, participants avec indicateurs, contexte avec données marché
+
+---
+
 ## Format des bullets — Convention "Titre — Détail"
 
 Pour les layouts \`card-grid\`, \`row-cards\` et \`insight-boxes\`, utilise le séparateur " — " (tiret cadratin entouré d'espaces) pour séparer un titre court d'un détail explicatif :
@@ -213,7 +257,7 @@ Sans séparateur " — ", le texte entier est affiché uniformément sans hiéra
 - **objectives** : 3–5 bullets — card-grid ou insight-boxes selon nature (stratégique vs. exploratoire)
 - **methodology** : 3–4 bullets — two-panel fortement recommandé (body = méthode + durée)
 - **participants** : 3–4 bullets — row-cards recommandé (format "Profil — Détail recrutement")
-- **timeline** : 3–5 bullets — phase-blocks si jalons temporels séquentiels ≤5, sinon list
+- **timeline** : 3–5 bullets — \`chevron-flow\` (flux visuel fort, 3–5 phases), \`timeline-bars\` (durées hétérogènes, format "Phase — Durée"), \`phase-blocks\` (blocs colorés neutres) ; \`list\` si >5 items
 - **deliverables** : 3–4 bullets — row-cards ou card-grid (format "Livrable — Description")
 - **insights** : 3–5 bullets — insight-boxes recommandé (TON MESURÉ OBLIGATOIRE)
 - **next_steps** : 3–4 bullets — row-cards recommandé (format "Action — Responsable / Délai")

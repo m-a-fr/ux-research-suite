@@ -27,7 +27,11 @@ export type BriefLayoutType =
   | "two-panel"
   | "row-cards"
   | "phase-blocks"
-  | "insight-boxes";
+  | "insight-boxes"
+  | "chevron-flow"
+  | "timeline-bars"
+  | "split-highlight"
+  | "metric-tiles";
 
 export interface BriefSlide {
   slide_number: number;
