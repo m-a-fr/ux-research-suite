@@ -148,7 +148,7 @@ function StreamingProgress({ buffer }: { buffer: string }) {
       </ol>
 
       {/* Skeleton slide cards */}
-      <div className="grid grid-cols-3 gap-3 pt-2">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 pt-2">
         {Array.from({ length: 9 }).map((_, i) => (
           <Skeleton key={i} className="h-24 w-full rounded-lg" />
         ))}
@@ -325,7 +325,7 @@ export function BriefPreview({
       <Separator />
 
       {/* 3×3 slide grid */}
-      <div className="grid grid-cols-3 gap-3">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
         {brief.slides.map((slide) => (
           <SlideCard key={slide.slide_number} slide={slide} />
         ))}

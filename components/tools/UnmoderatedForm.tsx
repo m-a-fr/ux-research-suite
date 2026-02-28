@@ -181,7 +181,7 @@ function CommonFields<T extends { platform: string; fidelity: string; tool: stri
           </FormItem>
         )}
       />
-      <div className="grid grid-cols-2 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
         <FormField
           control={control}
           name="duration"

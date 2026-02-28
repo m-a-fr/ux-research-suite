@@ -332,7 +332,7 @@ export default function ProtocolGeneratorPage() {
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 items-start">
         {/* Formulaire */}
-        <div className="sticky top-6">
+        <div className="lg:sticky top-6">
           {isExploratory ? (
             <ExploratoryForm onSubmit={handleGenerate} isLoading={isLoading} />
           ) : isSurvey ? (
