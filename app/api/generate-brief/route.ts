@@ -12,84 +12,17 @@ interface AnyProtocol {
 
 // ─── User message builder ──────────────────────────────────────────────────
 
-const STUDY_TYPE_LABELS: Record<string, string> = {
-  exploratory_interview: "Entretiens exploratoires",
-  moderated_usability: "Test d'utilisabilité modéré",
-  unmoderated_usability: "Test d'utilisabilité non-modéré",
-  survey: "Sondage / Survey",
-  diary_study: "Journal de bord (diary study)",
-};
-
 function buildBriefUserMessage(protocol: AnyProtocol): string {
-  const typeLabel = STUDY_TYPE_LABELS[protocol.study_type] ?? protocol.study_type;
-  const lines: string[] = [
-    `Génère un brief stakeholders à partir du protocole UX suivant.`,
+  return [
+    `Génère un brief stakeholders à partir du protocole UX complet suivant.`,
     ``,
-    `TYPE D'ÉTUDE : ${typeLabel}`,
-    `TITRE : ${protocol.title}`,
-  ];
-
-  // Duration
-  const duration =
-    (protocol.duration_minutes as number | undefined) ??
-    (protocol.estimated_duration_minutes as number | undefined);
-  if (duration) lines.push(`DURÉE PAR SESSION : ${duration} minutes`);
-
-  // Platform (usability tests)
-  if (protocol.platform) lines.push(`PLATEFORME : ${protocol.platform}`);
-
-  // Fidelity (usability tests)
-  if (protocol.fidelity) lines.push(`FIDÉLITÉ : ${protocol.fidelity}`);
-
-  // Test design (unmoderated)
-  if (protocol.test_design) lines.push(`DESIGN DE TEST : ${protocol.test_design}`);
-
-  // Tasks summary (moderated / unmoderated)
-  const tasks = protocol.tasks as Array<{ task?: string; screen_text?: string }> | undefined;
-  if (tasks && tasks.length > 0) {
-    lines.push(`NOMBRE DE TÂCHES : ${tasks.length}`);
-    const taskSummary = tasks
-      .slice(0, 3)
-      .map((t, i) => `  ${i + 1}. ${t.task ?? t.screen_text ?? ""}`)
-      .join("\n");
-    if (taskSummary.trim()) lines.push(`EXEMPLES DE TÂCHES :\n${taskSummary}`);
-  }
-
-  // Sections summary (exploratory / moderated)
-  const sections = protocol.sections as Array<{ type?: string; title?: string }> | undefined;
-  if (sections && sections.length > 0) {
-    lines.push(`SECTIONS : ${sections.map((s) => s.title ?? s.type).join(", ")}`);
-  }
-
-  // Survey blocks
-  const blocks = protocol.blocks as Array<{ type?: string; title?: string }> | undefined;
-  if (blocks && blocks.length > 0) {
-    lines.push(`BLOCS SONDAGE : ${blocks.map((b) => b.title ?? b.type).join(", ")}`);
-  }
-
-  // A/B variants
-  const variants = protocol.variants as Array<{ label?: string; product_name?: string }> | undefined;
-  if (variants && variants.length > 0) {
-    lines.push(
-      `VARIANTES A/B : ${variants.map((v) => `${v.label} — ${v.product_name}`).join(" / ")}`
-    );
-  }
-
-  // Benchmark products
-  const products = protocol.products as Array<{ name?: string; role?: string }> | undefined;
-  if (products && products.length > 0) {
-    lines.push(`PRODUITS BENCHMARK : ${products.map((p) => p.name).join(", ")}`);
-  }
-
-  // Screener
-  const screener = protocol.screener_questions as string[] | undefined;
-  if (screener && screener.length > 0) {
-    lines.push(`SCREENING : Oui (${screener.length} critère${screener.length > 1 ? "s" : ""})`);
-  }
-
-  lines.push(``, `Génère le brief stakeholders complet en 9 slides. Réponds UNIQUEMENT avec le JSON valide, sans texte supplémentaire.`);
-
-  return lines.join("\n");
+    `PROTOCOLE COMPLET (JSON) :`,
+    `\`\`\`json`,
+    JSON.stringify(protocol, null, 2),
+    `\`\`\``,
+    ``,
+    `Génère le brief stakeholders complet en 9 slides. Réponds UNIQUEMENT avec le JSON valide, sans texte supplémentaire.`,
+  ].join("\n");
 }
 
 // ─── Route ────────────────────────────────────────────────────────────────
@@ -114,7 +47,7 @@ export async function POST(req: NextRequest) {
       try {
         const claudeStream = anthropic.messages.stream({
           model: "claude-sonnet-4-6",
-          max_tokens: 4096,
+          max_tokens: 8192,
           system: BRIEF_SYSTEM_PROMPT,
           messages: [{ role: "user", content: buildBriefUserMessage(protocol) }],
         });
