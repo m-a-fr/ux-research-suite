@@ -6,7 +6,7 @@ export type BriefSlideType =
   | "participants"
   | "timeline"
   | "deliverables"
-  | "decisions"
+  | "insights"
   | "next_steps";
 
 export interface BriefSlide {

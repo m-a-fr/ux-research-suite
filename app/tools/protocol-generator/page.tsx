@@ -20,6 +20,10 @@ import { UnmoderatedPreview } from "@/components/tools/UnmoderatedPreview";
 import { BriefPreview } from "@/components/tools/BriefPreview";
 import { Separator } from "@/components/ui/separator";
 import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Label } from "@/components/ui/label";
+import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
 import {
   Select,
   SelectContent,
@@ -33,6 +37,12 @@ import {
 type AnyResult = Protocol | ExploratoryProtocol | Survey | ModeratedProtocol | UnmoderatedProtocol;
 type AnyFormValues = ProtocolFormValues | ExploratoryFormValues | SurveyFormValues | ModeratedFormValues | UnmoderatedFormValues;
 type PageState = "idle" | "streaming" | "done" | "error";
+
+interface BriefContext {
+  trigger: string;
+  audience: string;
+  constraints: string;
+}
 
 const STUDY_TYPE_OPTIONS: { value: StudyType; label: string }[] = [
   { value: "exploratory_interview", label: "Entretien exploratoire" },
@@ -58,6 +68,11 @@ export default function ProtocolGeneratorPage() {
   const [briefStreamBuffer, setBriefStreamBuffer] = useState("");
   const [isExportingBrief, setIsExportingBrief] = useState(false);
   const [briefError, setBriefError] = useState<string | null>(null);
+  const [briefContext, setBriefContext] = useState<BriefContext>({
+    trigger: "",
+    audience: "",
+    constraints: "",
+  });
 
   function handleTypeChange(newType: StudyType) {
     setStudyType(newType);
@@ -69,6 +84,7 @@ export default function ProtocolGeneratorPage() {
     setBriefState("idle");
     setBriefStreamBuffer("");
     setBriefError(null);
+    setBriefContext({ trigger: "", audience: "", constraints: "" });
   }
 
   async function handleGenerate(values: AnyFormValues) {
@@ -80,6 +96,7 @@ export default function ProtocolGeneratorPage() {
     setBriefState("idle");
     setBriefStreamBuffer("");
     setBriefError(null);
+    setBriefContext({ trigger: "", audience: "", constraints: "" });
 
     try {
       const response = await fetch("/api/generate-protocol", {
@@ -167,6 +184,10 @@ export default function ProtocolGeneratorPage() {
 
   async function handleGenerateBrief() {
     if (!result) return;
+
+    // Snapshot context values at call time
+    const contextSnapshot = { ...briefContext };
+
     setBriefState("streaming");
     setBriefStreamBuffer("");
     setBrief(null);
@@ -176,7 +197,7 @@ export default function ProtocolGeneratorPage() {
       const response = await fetch("/api/generate-brief", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ protocol: result }),
+        body: JSON.stringify({ protocol: result, context: contextSnapshot }),
       });
 
       if (!response.ok) {
@@ -204,7 +225,10 @@ export default function ProtocolGeneratorPage() {
         setBriefStreamBuffer(accumulated);
       }
 
-      const jsonMatch = accumulated.match(/\{[\s\S]*\}/);
+      // Extract JSON from <brief> tag first, then fall back to bare JSON
+      const briefTag = accumulated.match(/<brief>([\s\S]*?)<\/brief>/);
+      const jsonStr = briefTag ? briefTag[1] : accumulated;
+      const jsonMatch = jsonStr.match(/\{[\s\S]*\}/);
       if (!jsonMatch) throw new Error("Aucun JSON trouvé dans la réponse");
 
       let parsed: Brief;
@@ -222,6 +246,14 @@ export default function ProtocolGeneratorPage() {
       setBriefError(message);
       setBriefState("error");
     }
+  }
+
+  function handleResetBrief() {
+    setBrief(null);
+    setBriefState("idle");
+    setBriefStreamBuffer("");
+    setBriefError(null);
+    // briefContext is preserved so user can tweak and regenerate
   }
 
   async function handleExportBrief() {
@@ -326,19 +358,77 @@ export default function ProtocolGeneratorPage() {
 
         {/* Preview */}
         <div>
-          {/* "Créer le brief" button — shown only when protocol is done */}
-          {pageState === "done" && (
+          {/* Brief context form — shown only when protocol is done and brief is idle */}
+          {pageState === "done" && briefState === "idle" && (
+            <Card className="mb-4">
+              <CardHeader className="pb-3">
+                <CardTitle className="text-sm font-semibold">
+                  Créer le brief stakeholders
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-3">
+                <div className="space-y-1.5">
+                  <Label htmlFor="brief-trigger" className="text-xs">
+                    Contexte déclencheur
+                  </Label>
+                  <Textarea
+                    id="brief-trigger"
+                    placeholder="Qu'est-ce qui a déclenché cette étude ?"
+                    value={briefContext.trigger}
+                    onChange={(e) =>
+                      setBriefContext((c) => ({ ...c, trigger: e.target.value }))
+                    }
+                    rows={2}
+                    className="text-sm resize-none"
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <Label htmlFor="brief-audience" className="text-xs">
+                    Audience du brief
+                  </Label>
+                  <Input
+                    id="brief-audience"
+                    placeholder="À qui ce brief sera-t-il présenté ?"
+                    value={briefContext.audience}
+                    onChange={(e) =>
+                      setBriefContext((c) => ({ ...c, audience: e.target.value }))
+                    }
+                    className="text-sm"
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <Label htmlFor="brief-constraints" className="text-xs">
+                    Contraintes
+                  </Label>
+                  <Textarea
+                    id="brief-constraints"
+                    placeholder="Contraintes de délai, budget ou périmètre ?"
+                    value={briefContext.constraints}
+                    onChange={(e) =>
+                      setBriefContext((c) => ({ ...c, constraints: e.target.value }))
+                    }
+                    rows={2}
+                    className="text-sm resize-none"
+                  />
+                </div>
+                <Button
+                  onClick={handleGenerateBrief}
+                  disabled={briefState === "streaming"}
+                  variant="default"
+                  size="sm"
+                  className="w-full"
+                >
+                  Générer le brief
+                </Button>
+              </CardContent>
+            </Card>
+          )}
+
+          {/* Brief streaming indicator when generating */}
+          {pageState === "done" && briefState === "streaming" && (
             <div className="mb-4">
-              <Button
-                onClick={handleGenerateBrief}
-                disabled={briefState === "streaming"}
-                variant="default"
-                size="sm"
-                className="w-full"
-              >
-                {briefState === "streaming"
-                  ? "Génération du brief…"
-                  : "Créer le brief stakeholders"}
+              <Button disabled variant="default" size="sm" className="w-full">
+                Génération du brief…
               </Button>
             </div>
           )}
@@ -424,6 +514,7 @@ export default function ProtocolGeneratorPage() {
             streamBuffer={briefStreamBuffer}
             onExport={handleExportBrief}
             isExporting={isExportingBrief}
+            onReset={handleResetBrief}
           />
         </div>
       )}

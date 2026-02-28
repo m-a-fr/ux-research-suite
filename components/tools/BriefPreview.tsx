@@ -19,40 +19,60 @@ const STREAMING_STAGES = [
     pct: 5,
   },
   {
-    id: "project_title",
-    label: "Titre et métadonnées",
-    sublabel: "Nom du projet, type d'étude, date",
-    marker: '"project_title"',
-    pct: 15,
+    id: "reflexion",
+    label: "Réflexion",
+    sublabel: "Analyse slide par slide avant rédaction",
+    marker: "<reflexion>",
+    pct: 20,
   },
   {
-    id: "slides",
-    label: "Génération des slides",
-    sublabel: "Contexte, objectifs, méthodologie…",
-    marker: '"slides"',
-    pct: 30,
+    id: "per_slide",
+    label: "Rédaction des slides",
+    sublabel: "Contenu, bullets et speaker notes",
+    marker: "## Slide",
+    pct: 20, // interpolated dynamically between 20% and 74%
   },
   {
-    id: "progress",
-    label: "Rédaction du contenu",
-    sublabel: "Bullets et speaker notes par slide",
-    marker: '"slide_number"',
-    pct: 60,
+    id: "evaluation",
+    label: "Évaluation globale",
+    sublabel: "Note et constats de qualité",
+    marker: "## Évaluation",
+    pct: 75,
+  },
+  {
+    id: "revision",
+    label: "Révisions",
+    sublabel: "Corrections de ton et de contenu",
+    marker: "## Révisions",
+    pct: 85,
   },
   {
     id: "finalisation",
     label: "Finalisation",
-    sublabel: "Décisions et prochaines étapes",
-    marker: '"next_steps"',
-    pct: 90,
+    sublabel: "Génération du JSON structuré",
+    marker: "<brief>",
+    pct: 95,
   },
 ] as const;
 
+type StageId = (typeof STREAMING_STAGES)[number]["id"];
+
 function countSlides(buffer: string): number {
-  return (buffer.match(/"slide_number"/g) ?? []).length;
+  return (buffer.match(/## Slide \d+/g) ?? []).length;
+}
+
+function computePct(buffer: string, currentId: StageId): number {
+  if (currentId === "per_slide") {
+    const n = countSlides(buffer);
+    // Interpolate linearly between 20% (0 slides) and 74% (9 slides)
+    return Math.round(20 + Math.min(n / 9, 1) * 54);
+  }
+  const stage = STREAMING_STAGES.find((s) => s.id === currentId);
+  return stage?.pct ?? 5;
 }
 
 function detectStageIndex(buffer: string): number {
+  // Walk stages in reverse to find the last matched marker
   for (let i = STREAMING_STAGES.length - 1; i >= 0; i--) {
     const marker = STREAMING_STAGES[i].marker;
     if (marker && buffer.includes(marker)) return i;
@@ -62,15 +82,19 @@ function detectStageIndex(buffer: string): number {
 
 function StreamingProgress({ buffer }: { buffer: string }) {
   const currentIdx = detectStageIndex(buffer);
+  const currentStage = STREAMING_STAGES[currentIdx];
   const slideCount = countSlides(buffer);
-  const pct = STREAMING_STAGES[currentIdx].pct;
+  const pct = computePct(buffer, currentStage.id);
 
   return (
     <div className="space-y-5">
       <div>
         <div className="flex justify-between items-center mb-1.5">
           <span className="text-xs font-medium text-muted-foreground">
-            Génération du brief… {slideCount > 0 ? `(${slideCount}/9 slides)` : ""}
+            Génération du brief…{" "}
+            {currentStage.id === "per_slide" && slideCount > 0
+              ? `(${slideCount}/9 slides)`
+              : ""}
           </span>
           <span className="text-xs text-muted-foreground">{pct} %</span>
         </div>
@@ -110,6 +134,9 @@ function StreamingProgress({ buffer }: { buffer: string }) {
                   }`}
                 >
                   {stage.label}
+                  {isCurrent && stage.id === "per_slide" && slideCount > 0
+                    ? ` (${slideCount}/9)`
+                    : ""}
                 </p>
                 {isCurrent && (
                   <p className="text-xs text-muted-foreground mt-0.5">{stage.sublabel}</p>
@@ -140,7 +167,7 @@ const SLIDE_TYPE_LABELS: Record<BriefSlideType, string> = {
   participants: "Participants",
   timeline: "Calendrier",
   deliverables: "Livrables",
-  decisions: "Décisions",
+  insights: "Éclairages",
   next_steps: "Prochaines étapes",
 };
 
@@ -152,7 +179,7 @@ const SLIDE_TYPE_ICONS: Record<BriefSlideType, string> = {
   participants: "👥",
   timeline: "📅",
   deliverables: "📦",
-  decisions: "⚖️",
+  insights: "💡",
   next_steps: "🚀",
 };
 
@@ -164,7 +191,7 @@ const SLIDE_TYPE_COLORS: Record<BriefSlideType, string> = {
   participants: "bg-green-100 text-green-800",
   timeline: "bg-amber-100 text-amber-800",
   deliverables: "bg-orange-100 text-orange-800",
-  decisions: "bg-red-100 text-red-800",
+  insights: "bg-indigo-100 text-indigo-800",
   next_steps: "bg-emerald-100 text-emerald-800",
 };
 
@@ -246,6 +273,7 @@ interface BriefPreviewProps {
   streamBuffer: string;
   onExport: () => void;
   isExporting: boolean;
+  onReset?: () => void;
 }
 
 export function BriefPreview({
@@ -254,6 +282,7 @@ export function BriefPreview({
   streamBuffer,
   onExport,
   isExporting,
+  onReset,
 }: BriefPreviewProps) {
   if (!isStreaming && !brief) return null;
 
@@ -281,9 +310,16 @@ export function BriefPreview({
             </span>
           </div>
         </div>
-        <Button onClick={onExport} disabled={isExporting} variant="outline" size="sm">
-          {isExporting ? "Export…" : "Télécharger .pptx"}
-        </Button>
+        <div className="flex items-center gap-2 flex-wrap">
+          {onReset && (
+            <Button onClick={onReset} variant="ghost" size="sm">
+              Régénérer le brief
+            </Button>
+          )}
+          <Button onClick={onExport} disabled={isExporting} variant="outline" size="sm">
+            {isExporting ? "Export…" : "Télécharger .pptx"}
+          </Button>
+        </div>
       </div>
 
       <Separator />

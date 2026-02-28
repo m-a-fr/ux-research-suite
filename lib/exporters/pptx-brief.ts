@@ -55,7 +55,7 @@ const ACCENTS: Record<string, [string, string]> = {
   participants: ["0D9488", "CCFBF1"],
   timeline:     ["B45309", "FEF3C7"],
   deliverables: ["059669", "D1FAE5"],
-  decisions:    ["DC2626", "FEE2E2"],
+  insights:     ["4F46E5", "EEF2FF"],
   next_steps:   ["4F46E5", "EEF2FF"],
 };
 
@@ -352,14 +352,14 @@ function renderDeliverables(pptx: PptxGenJS, slide: BriefSlide): void {
   ps.addNotes(san(slide.speaker_notes));
 }
 
-// ─── DECISIONS ─────────────────────────────────────────────────────────────
+// ─── INSIGHTS ──────────────────────────────────────────────────────────────
 // Layout: rightArrow shapes + alternating row backgrounds
 
 function renderDecisions(pptx: PptxGenJS, slide: BriefSlide): void {
   const ps = pptx.addSlide();
-  const [acc, light] = ACCENTS.decisions;
+  const [acc, light] = ACCENTS.insights;
 
-  drawBg(ps, pptx, "FFF5F5");
+  drawBg(ps, pptx, "F5F3FF");
   drawHeader(ps, pptx, slide, acc);
   const cY = drawBody(ps, pptx, slide, acc, light);
 
@@ -373,7 +373,7 @@ function renderDecisions(pptx: PptxGenJS, slide: BriefSlide): void {
     const ay = by + (itemH - arrowH) / 2;
     // Alternating row tint
     if (i % 2 === 0) {
-      ps.addShape(pptx.ShapeType.rect, { x: 0.35, y: by + 0.03, w: W - 0.7, h: itemH - 0.06, fill: { color: "FEE2E2" }, line: { color: "FEE2E2" } });
+      ps.addShape(pptx.ShapeType.rect, { x: 0.35, y: by + 0.03, w: W - 0.7, h: itemH - 0.06, fill: { color: "E0E7FF" }, line: { color: "E0E7FF" } });
     }
     // Arrow
     ps.addShape(pptx.ShapeType.rightArrow, { x: 0.4, y: ay, w: arrowW, h: arrowH, fill: { color: acc }, line: { color: acc } });
@@ -427,7 +427,7 @@ const RENDERERS: Record<string, Renderer> = {
   participants: (pptx, slide) => renderParticipants(pptx, slide),
   timeline:     (pptx, slide) => renderTimeline(pptx, slide),
   deliverables: (pptx, slide) => renderDeliverables(pptx, slide),
-  decisions:    (pptx, slide) => renderDecisions(pptx, slide),
+  insights:     (pptx, slide) => renderDecisions(pptx, slide),
   next_steps:   (pptx, slide) => renderNextSteps(pptx, slide),
 };
 

@@ -10,6 +10,12 @@ interface AnyProtocol {
   [key: string]: unknown;
 }
 
+interface BriefContext {
+  trigger?: string;
+  audience?: string;
+  constraints?: string;
+}
+
 // ─── User message builder ──────────────────────────────────────────────────
 
 const STUDY_TYPE_LABELS: Record<string, string> = {
@@ -20,74 +26,33 @@ const STUDY_TYPE_LABELS: Record<string, string> = {
   diary_study: "Journal de bord (diary study)",
 };
 
-function buildBriefUserMessage(protocol: AnyProtocol): string {
+function buildBriefUserMessage(protocol: AnyProtocol, context?: BriefContext): string {
   const typeLabel = STUDY_TYPE_LABELS[protocol.study_type] ?? protocol.study_type;
   const lines: string[] = [
     `Génère un brief stakeholders à partir du protocole UX suivant.`,
     ``,
     `TYPE D'ÉTUDE : ${typeLabel}`,
-    `TITRE : ${protocol.title}`,
   ];
 
-  // Duration
-  const duration =
-    (protocol.duration_minutes as number | undefined) ??
-    (protocol.estimated_duration_minutes as number | undefined);
-  if (duration) lines.push(`DURÉE PAR SESSION : ${duration} minutes`);
-
-  // Platform (usability tests)
-  if (protocol.platform) lines.push(`PLATEFORME : ${protocol.platform}`);
-
-  // Fidelity (usability tests)
-  if (protocol.fidelity) lines.push(`FIDÉLITÉ : ${protocol.fidelity}`);
-
-  // Test design (unmoderated)
-  if (protocol.test_design) lines.push(`DESIGN DE TEST : ${protocol.test_design}`);
-
-  // Tasks summary (moderated / unmoderated)
-  const tasks = protocol.tasks as Array<{ task?: string; screen_text?: string }> | undefined;
-  if (tasks && tasks.length > 0) {
-    lines.push(`NOMBRE DE TÂCHES : ${tasks.length}`);
-    const taskSummary = tasks
-      .slice(0, 3)
-      .map((t, i) => `  ${i + 1}. ${t.task ?? t.screen_text ?? ""}`)
-      .join("\n");
-    if (taskSummary.trim()) lines.push(`EXEMPLES DE TÂCHES :\n${taskSummary}`);
+  // Optional context fields
+  if (context?.trigger?.trim()) {
+    lines.push(`CONTEXTE DÉCLENCHEUR : ${context.trigger.trim()}`);
+  }
+  if (context?.audience?.trim()) {
+    lines.push(`AUDIENCE DU BRIEF : ${context.audience.trim()}`);
+  }
+  if (context?.constraints?.trim()) {
+    lines.push(`CONTRAINTES : ${context.constraints.trim()}`);
   }
 
-  // Sections summary (exploratory / moderated)
-  const sections = protocol.sections as Array<{ type?: string; title?: string }> | undefined;
-  if (sections && sections.length > 0) {
-    lines.push(`SECTIONS : ${sections.map((s) => s.title ?? s.type).join(", ")}`);
-  }
-
-  // Survey blocks
-  const blocks = protocol.blocks as Array<{ type?: string; title?: string }> | undefined;
-  if (blocks && blocks.length > 0) {
-    lines.push(`BLOCS SONDAGE : ${blocks.map((b) => b.title ?? b.type).join(", ")}`);
-  }
-
-  // A/B variants
-  const variants = protocol.variants as Array<{ label?: string; product_name?: string }> | undefined;
-  if (variants && variants.length > 0) {
-    lines.push(
-      `VARIANTES A/B : ${variants.map((v) => `${v.label} — ${v.product_name}`).join(" / ")}`
-    );
-  }
-
-  // Benchmark products
-  const products = protocol.products as Array<{ name?: string; role?: string }> | undefined;
-  if (products && products.length > 0) {
-    lines.push(`PRODUITS BENCHMARK : ${products.map((p) => p.name).join(", ")}`);
-  }
-
-  // Screener
-  const screener = protocol.screener_questions as string[] | undefined;
-  if (screener && screener.length > 0) {
-    lines.push(`SCREENING : Oui (${screener.length} critère${screener.length > 1 ? "s" : ""})`);
-  }
-
-  lines.push(``, `Génère le brief stakeholders complet en 9 slides. Réponds UNIQUEMENT avec le JSON valide, sans texte supplémentaire.`);
+  // Full protocol JSON
+  lines.push(
+    ``,
+    `PROTOCOLE COMPLET (JSON) :`,
+    JSON.stringify(protocol, null, 2),
+    ``,
+    `Génère le brief stakeholders complet en 9 slides. Respecte scrupuleusement le format de réponse en deux blocs (<reflexion> puis <brief>).`
+  );
 
   return lines.join("\n");
 }
@@ -104,7 +69,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Corps de requête invalide" }, { status: 400 });
   }
 
-  const { protocol } = body as { protocol?: AnyProtocol };
+  const { protocol, context } = body as { protocol?: AnyProtocol; context?: BriefContext };
   if (!protocol || !protocol.title || !protocol.study_type) {
     return NextResponse.json({ error: "Protocole invalide ou manquant" }, { status: 422 });
   }
@@ -114,9 +79,9 @@ export async function POST(req: NextRequest) {
       try {
         const claudeStream = anthropic.messages.stream({
           model: "claude-sonnet-4-6",
-          max_tokens: 4096,
+          max_tokens: 8192,
           system: BRIEF_SYSTEM_PROMPT,
-          messages: [{ role: "user", content: buildBriefUserMessage(protocol) }],
+          messages: [{ role: "user", content: buildBriefUserMessage(protocol, context) }],
         });
 
         for await (const chunk of claudeStream) {
