@@ -305,7 +305,7 @@ export default function ProtocolGeneratorPage() {
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 items-start">
         {/* Formulaire */}
-        <div className="sticky top-6">
+        <div className="lg:sticky top-6">
           {isExploratory ? (
             <ExploratoryForm onSubmit={handleGenerate} isLoading={isLoading} />
           ) : isSurvey ? (
@@ -330,31 +330,9 @@ export default function ProtocolGeneratorPage() {
         </div>
 
         {/* Preview */}
-        <div>
-          {/* "Créer le brief" button — shown only when protocol is done */}
-          {pageState === "done" && (
-            <div className="mb-4">
-              {briefContextOpen ? (
-                <BriefContextForm
-                  onSubmit={handleGenerateBrief}
-                  onCancel={() => setBriefContextOpen(false)}
-                />
-              ) : (
-                <Button
-                  onClick={() => setBriefContextOpen(true)}
-                  disabled={briefState === "streaming"}
-                  variant="default"
-                  size="sm"
-                  className="w-full"
-                >
-                  {briefState === "streaming"
-                    ? "Génération du brief…"
-                    : "Créer le brief stakeholders"}
-                </Button>
-              )}
-            </div>
-          )}
-
+        <div className="flex flex-col">
+          {/* Protocol preview — order-1 on mobile (appears first), order-2 on desktop */}
+          <div className="order-1 lg:order-2">
           {pageState === "idle" ? (
             <div className="flex flex-col items-center justify-center h-64 rounded-lg border border-dashed text-muted-foreground text-sm">
               <span className="text-4xl mb-3">📋</span>
@@ -412,6 +390,31 @@ export default function ProtocolGeneratorPage() {
                 />
               )}
             </>
+          )}
+          </div>
+
+          {/* "Créer le brief" button — order-2 on mobile (appears after preview), order-1 on desktop */}
+          {pageState === "done" && (
+            <div className="order-2 lg:order-1 mt-4 lg:mt-0 lg:mb-4">
+              {briefContextOpen ? (
+                <BriefContextForm
+                  onSubmit={handleGenerateBrief}
+                  onCancel={() => setBriefContextOpen(false)}
+                />
+              ) : (
+                <Button
+                  onClick={() => setBriefContextOpen(true)}
+                  disabled={briefState === "streaming"}
+                  variant="default"
+                  size="sm"
+                  className="w-full"
+                >
+                  {briefState === "streaming"
+                    ? "Génération du brief…"
+                    : "Créer le brief stakeholders"}
+                </Button>
+              )}
+            </div>
           )}
         </div>
       </div>
