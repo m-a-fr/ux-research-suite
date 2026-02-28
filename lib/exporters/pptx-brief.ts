@@ -18,9 +18,6 @@ function san(text: string): string {
     .replace(/[^\x00-\xFF]/g, (c) => `[U+${c.codePointAt(0)!.toString(16).toUpperCase()}]`);
 }
 
-// Deep-sanitize every string in the Brief tree before touching pptxgenjs.
-// Calling san() on individual addText() calls is not enough because
-// addNotes() and pptx metadata share the same btoa() encoding path.
 function deepSan<T>(obj: T): T {
   if (typeof obj === "string") return san(obj) as unknown as T;
   if (Array.isArray(obj)) return obj.map(deepSan) as unknown as T;
@@ -32,6 +29,18 @@ function deepSan<T>(obj: T): T {
     return out as T;
   }
   return obj;
+}
+
+// ─── Bullet parser ──────────────────────────────────────────────────────────
+// Splits "Primary -- Secondary" (sanitized form of Claude's " — " separator)
+// into a two-level hierarchy for richer visual display.
+
+function parseBullet(text: string): { primary: string; secondary: string | null } {
+  const idx = text.indexOf(" -- ");
+  if (idx > 0 && idx < text.length - 4) {
+    return { primary: text.slice(0, idx), secondary: text.slice(idx + 4) };
+  }
+  return { primary: text, secondary: null };
 }
 
 // ─── Design tokens ─────────────────────────────────────────────────────────
@@ -46,7 +55,8 @@ const WHITE = "FFFFFF";
 const NAVY = "1E3A5F";
 const TEXT = "1F2937";
 
-// Accent color [main, light] per slide type
+// Accent color [main, light] per slide type — determines color palette only.
+// Layout structure is chosen by Claude at generation time via slide.layout.
 const ACCENTS: Record<string, [string, string]> = {
   cover:        ["3B82F6", "1E3A5F"],
   context:      ["475569", "F1F5F9"],
@@ -56,7 +66,19 @@ const ACCENTS: Record<string, [string, string]> = {
   timeline:     ["B45309", "FEF3C7"],
   deliverables: ["059669", "D1FAE5"],
   insights:     ["4F46E5", "EEF2FF"],
-  next_steps:   ["4F46E5", "EEF2FF"],
+  next_steps:   ["0EA5E9", "E0F2FE"],
+};
+
+// Background color per slide type
+const BG_COLORS: Record<string, string> = {
+  context:      "F1F5F9",
+  objectives:   "F8FAFC",
+  methodology:  "FAFAFA",
+  participants: "F0FDFA",
+  timeline:     "FFFBEB",
+  deliverables: "F0FDF4",
+  insights:     "F5F3FF",
+  next_steps:   "F0F9FF",
 };
 
 // ─── Shared drawing primitives ─────────────────────────────────────────────
@@ -68,22 +90,19 @@ function drawBg(ps: Slide, pptx: PptxGenJS, color: string) {
 }
 
 function drawHeader(ps: Slide, pptx: PptxGenJS, slide: BriefSlide, acc: string) {
-  // Navy bar
   ps.addShape(pptx.ShapeType.rect, { x: 0, y: 0, w: W, h: HDR_H, fill: { color: NAVY }, line: { color: NAVY } });
-  // Slide number badge (ellipse)
   ps.addShape(pptx.ShapeType.ellipse, { x: 0.18, y: 0.22, w: 0.32, h: 0.32, fill: { color: acc }, line: { color: acc } });
   ps.addText(String(slide.slide_number), {
     x: 0.18, y: 0.22, w: 0.32, h: 0.32,
     fontSize: 9, bold: true, color: WHITE, align: "center", valign: "middle",
   });
-  // Title
   ps.addText(san(slide.title), {
     x: 0.62, y: 0, w: W - 0.77, h: HDR_H,
     fontSize: 16, bold: true, color: WHITE, valign: "middle",
   });
 }
 
-// Returns next Y after the body highlight box (or CS if no body)
+// Draws the body highlight box if slide.body exists. Returns next cY.
 function drawBody(ps: Slide, pptx: PptxGenJS, slide: BriefSlide, acc: string, light: string): number {
   if (!slide.body) return CS;
   ps.addShape(pptx.ShapeType.rect, { x: 0.4, y: CS, w: W - 0.8, h: BH, fill: { color: light }, line: { color: acc, pt: 1 } });
@@ -95,32 +114,24 @@ function drawBody(ps: Slide, pptx: PptxGenJS, slide: BriefSlide, acc: string, li
   return CS + BH + 0.12;
 }
 
-// ─── COVER ─────────────────────────────────────────────────────────────────
-// Layout: full navy bg, dark right panel, big title left, bullets as metadata right
+// ─── COVER (own dedicated renderer) ────────────────────────────────────────
 
 function renderCover(pptx: PptxGenJS, slide: BriefSlide, brief: Brief): void {
   const ps = pptx.addSlide();
   const PANEL_X = 7.4;
   const panelW = W - PANEL_X;
 
-  // Backgrounds
   ps.addShape(pptx.ShapeType.rect, { x: 0, y: 0, w: W, h: H, fill: { color: NAVY }, line: { color: NAVY } });
   ps.addShape(pptx.ShapeType.rect, { x: PANEL_X, y: 0, w: panelW, h: H, fill: { color: "162D4A" }, line: { color: "162D4A" } });
-
-  // Blue left accent bar
   ps.addShape(pptx.ShapeType.rect, { x: 0, y: 0, w: 0.1, h: H, fill: { color: "3B82F6" }, line: { color: "3B82F6" } });
-  // Blue horizontal rule
   ps.addShape(pptx.ShapeType.rect, { x: 0.1, y: 2.58, w: PANEL_X - 0.3, h: 0.04, fill: { color: "3B82F6" }, line: { color: "3B82F6" } });
-  // Right panel top accent
   ps.addShape(pptx.ShapeType.rect, { x: PANEL_X, y: 0, w: panelW, h: 0.07, fill: { color: "3B82F6" }, line: { color: "3B82F6" } });
 
-  // Title
   ps.addText(san(slide.title), {
     x: 0.35, y: 0.75, w: PANEL_X - 0.55, h: 1.7,
     fontSize: 28, bold: true, color: WHITE, valign: "bottom",
   });
 
-  // Body / subtitle
   if (slide.body) {
     ps.addText(san(slide.body), {
       x: 0.35, y: 2.7, w: PANEL_X - 0.55, h: 0.65,
@@ -128,7 +139,6 @@ function renderCover(pptx: PptxGenJS, slide: BriefSlide, brief: Brief): void {
     });
   }
 
-  // Right panel: bullets as vertical metadata items
   const n = slide.bullets.length;
   const itemH = (H - 0.6) / Math.max(n, 1);
   slide.bullets.forEach((b, i) => {
@@ -143,7 +153,6 @@ function renderCover(pptx: PptxGenJS, slide: BriefSlide, brief: Brief): void {
     });
   });
 
-  // Date bottom left
   ps.addText(san(brief.generated_date), {
     x: 0.35, y: H - 0.42, w: 3, h: 0.28,
     fontSize: 9, color: "64748B",
@@ -152,14 +161,12 @@ function renderCover(pptx: PptxGenJS, slide: BriefSlide, brief: Brief): void {
   ps.addNotes(san(slide.speaker_notes));
 }
 
-// ─── CONTEXT ───────────────────────────────────────────────────────────────
-// Layout: left-border accent bar on each bullet
+// ─── LAYOUT: LIST ──────────────────────────────────────────────────────────
+// Vertical list with accent bars. Universal fallback.
 
-function renderContext(pptx: PptxGenJS, slide: BriefSlide): void {
+function renderList(pptx: PptxGenJS, slide: BriefSlide, acc: string, light: string, bg: string): void {
   const ps = pptx.addSlide();
-  const [acc, light] = ACCENTS.context;
-
-  drawBg(ps, pptx, "F8FAFC");
+  drawBg(ps, pptx, bg);
   drawHeader(ps, pptx, slide, acc);
   const cY = drawBody(ps, pptx, slide, acc, light);
 
@@ -168,115 +175,216 @@ function renderContext(pptx: PptxGenJS, slide: BriefSlide): void {
 
   slide.bullets.forEach((b, i) => {
     const by = cY + i * itemH;
-    ps.addShape(pptx.ShapeType.rect, { x: 0.4, y: by + 0.1, w: 0.055, h: itemH - 0.22, fill: { color: "3B82F6" }, line: { color: "3B82F6" } });
-    ps.addText(san(b), { x: 0.6, y: by, w: W - 1.05, h: itemH, fontSize: 11, color: TEXT, valign: "middle" });
+    const { primary, secondary } = parseBullet(b);
+
+    ps.addShape(pptx.ShapeType.rect, { x: 0.4, y: by + 0.1, w: 0.055, h: itemH - 0.22, fill: { color: acc }, line: { color: acc } });
+
+    if (secondary) {
+      ps.addText(san(primary), {
+        x: 0.6, y: by + 0.04, w: W - 1.05, h: itemH * 0.5,
+        fontSize: 11, bold: true, color: NAVY, valign: "bottom",
+      });
+      ps.addText(san(secondary), {
+        x: 0.6, y: by + itemH * 0.5, w: W - 1.05, h: itemH * 0.44,
+        fontSize: 9.5, color: TEXT, valign: "top",
+      });
+    } else {
+      ps.addText(san(b), { x: 0.6, y: by, w: W - 1.05, h: itemH, fontSize: 11, color: TEXT, valign: "middle" });
+    }
   });
 
   ps.addNotes(san(slide.speaker_notes));
 }
 
-// ─── OBJECTIVES ────────────────────────────────────────────────────────────
-// Layout: numbered ellipse badges
+// ─── LAYOUT: CARD GRID ─────────────────────────────────────────────────────
+// 2×N grid of white cards, each with a colored top bar.
+// Compact body line above grid if slide.body is present.
 
-function renderObjectives(pptx: PptxGenJS, slide: BriefSlide): void {
+function renderCardGrid(pptx: PptxGenJS, slide: BriefSlide, acc: string, _light: string, bg: string): void {
   const ps = pptx.addSlide();
-  const [acc, light] = ACCENTS.objectives;
-
-  drawBg(ps, pptx, "F8FAFC");
-  drawHeader(ps, pptx, slide, acc);
-  const cY = drawBody(ps, pptx, slide, acc, light);
-
-  const n = slide.bullets.length;
-  const itemH = Math.min((CE - cY) / Math.max(n, 1), 0.9);
-  const badge = Math.min(itemH * 0.52, 0.4);
-
-  slide.bullets.forEach((b, i) => {
-    const by = cY + i * itemH;
-    const cy = by + (itemH - badge) / 2;
-    ps.addShape(pptx.ShapeType.ellipse, { x: 0.4, y: cy, w: badge, h: badge, fill: { color: acc }, line: { color: acc } });
-    ps.addText(String(i + 1), { x: 0.4, y: cy, w: badge, h: badge, fontSize: Math.round(badge * 22), bold: true, color: WHITE, align: "center", valign: "middle" });
-    ps.addText(san(b), { x: 0.4 + badge + 0.14, y: by, w: W - 0.4 - badge - 0.55, h: itemH, fontSize: 11, color: TEXT, valign: "middle" });
-  });
-
-  ps.addNotes(san(slide.speaker_notes));
-}
-
-// ─── METHODOLOGY ───────────────────────────────────────────────────────────
-// Layout: large body highlight (method name) + diamond bullet points
-
-function renderMethodology(pptx: PptxGenJS, slide: BriefSlide): void {
-  const ps = pptx.addSlide();
-  const [acc, light] = ACCENTS.methodology;
-
-  drawBg(ps, pptx, "FAFAFA");
+  drawBg(ps, pptx, bg);
   drawHeader(ps, pptx, slide, acc);
 
-  let cY = CS;
+  // Compact body subtitle (no full box — preserve space for cards)
+  let gridStartY = CS + 0.05;
   if (slide.body) {
-    const mh = 0.72;
-    ps.addShape(pptx.ShapeType.rect, { x: 0.4, y: CS, w: W - 0.8, h: mh, fill: { color: light }, line: { color: acc, pt: 1.5 } });
-    ps.addShape(pptx.ShapeType.rect, { x: 0.4, y: CS, w: 0.08, h: mh, fill: { color: acc }, line: { color: acc } });
-    ps.addText(san(slide.body), { x: 0.6, y: CS, w: W - 1.15, h: mh, fontSize: 12, bold: true, color: NAVY, valign: "middle" });
-    cY = CS + mh + 0.15;
+    ps.addText(san(slide.body), {
+      x: 0.45, y: CS, w: W - 0.9, h: 0.38,
+      fontSize: 10.5, color: NAVY, italic: true, valign: "middle",
+    });
+    ps.addShape(pptx.ShapeType.rect, { x: 0.45, y: CS + 0.38, w: W - 0.9, h: 0.02, fill: { color: acc }, line: { color: acc } });
+    gridStartY = CS + 0.46;
   }
 
-  const n = slide.bullets.length;
-  const itemH = Math.min((CE - cY) / Math.max(n, 1), 0.82);
-  const dsize = 0.2;
+  const bullets = slide.bullets;
+  const n = bullets.length;
+  const COLS = n <= 2 ? 1 : 2;
+  const ROWS = Math.ceil(n / COLS);
+  const MX = 0.45;
+  const GAP = 0.18;
+  const cardW = (W - MX * 2 - GAP * (COLS - 1)) / COLS;
+  const availH = CE - gridStartY;
+  const cardH = Math.min((availH - GAP * (ROWS - 1)) / ROWS, 1.85);
+  const totalH = ROWS * cardH + (ROWS - 1) * GAP;
+  const startY = gridStartY + Math.max(0, (availH - totalH) / 2);
 
-  slide.bullets.forEach((b, i) => {
-    const by = cY + i * itemH;
-    const dy = by + (itemH - dsize) / 2;
-    ps.addShape(pptx.ShapeType.diamond, { x: 0.42, y: dy, w: dsize, h: dsize, fill: { color: acc }, line: { color: acc } });
-    ps.addText(san(b), { x: 0.75, y: by, w: W - 1.2, h: itemH, fontSize: 11, color: TEXT, valign: "middle" });
+  bullets.forEach((b, i) => {
+    const col = i % COLS;
+    const row = Math.floor(i / COLS);
+    // Last item alone in its row spans full width
+    const isLastAlone = i === n - 1 && n % COLS === 1 && COLS > 1;
+    const cx = MX + col * (cardW + GAP);
+    const cy = startY + row * (cardH + GAP);
+    const thisW = isLastAlone ? W - MX * 2 : cardW;
+    const { primary, secondary } = parseBullet(b);
+
+    // White card with subtle border
+    ps.addShape(pptx.ShapeType.rect, { x: cx, y: cy, w: thisW, h: cardH, fill: { color: WHITE }, line: { color: "CBD5E1", pt: 0.75 } });
+    // Accent top bar
+    ps.addShape(pptx.ShapeType.rect, { x: cx, y: cy, w: thisW, h: 0.08, fill: { color: acc }, line: { color: acc } });
+
+    const padX = 0.16;
+    const textX = cx + padX;
+    const textW = thisW - padX * 2;
+
+    if (secondary) {
+      ps.addText(san(primary), {
+        x: textX, y: cy + 0.12, w: textW, h: cardH * 0.44,
+        fontSize: 11, bold: true, color: NAVY, valign: "bottom",
+      });
+      ps.addText(san(secondary), {
+        x: textX, y: cy + cardH * 0.5, w: textW, h: cardH * 0.44,
+        fontSize: 9.5, color: TEXT, valign: "top",
+      });
+    } else {
+      ps.addText(san(b), {
+        x: textX, y: cy + 0.08, w: textW, h: cardH - 0.1,
+        fontSize: 11, color: TEXT, valign: "middle",
+      });
+    }
   });
 
   ps.addNotes(san(slide.speaker_notes));
 }
 
-// ─── PARTICIPANTS ──────────────────────────────────────────────────────────
-// Layout: two-column grid with teal square bullets + vertical separator
+// ─── LAYOUT: TWO PANEL ─────────────────────────────────────────────────────
+// Dark left panel (body as hero text) + light right panel (bullets with diamonds).
 
-function renderParticipants(pptx: PptxGenJS, slide: BriefSlide): void {
+function renderTwoPanel(pptx: PptxGenJS, slide: BriefSlide, acc: string, light: string, bg: string): void {
   const ps = pptx.addSlide();
-  const [acc, light] = ACCENTS.participants;
+  drawBg(ps, pptx, bg);
+  drawHeader(ps, pptx, slide, acc);
 
-  drawBg(ps, pptx, "F0FDFA");
+  const PANEL_H = CE - CS;
+  const LEFT_W = 3.1;
+  const LEFT_X = 0.4;
+  const RIGHT_X = LEFT_X + LEFT_W + 0.14;
+  const RIGHT_W = W - RIGHT_X - 0.3;
+
+  // Left dark panel
+  ps.addShape(pptx.ShapeType.rect, { x: LEFT_X, y: CS, w: LEFT_W, h: PANEL_H, fill: { color: acc }, line: { color: acc } });
+  // Light top accent strip on left panel
+  ps.addShape(pptx.ShapeType.rect, { x: LEFT_X, y: CS, w: LEFT_W, h: 0.06, fill: { color: light }, line: { color: light } });
+
+  const heroText = slide.body ?? slide.title;
+  ps.addText(san(heroText), {
+    x: LEFT_X + 0.22, y: CS + 0.22, w: LEFT_W - 0.4, h: PANEL_H - 0.65,
+    fontSize: 14, bold: true, color: WHITE, valign: "middle",
+  });
+  // Subtle label at bottom of left panel
+  ps.addText("Approche choisie", {
+    x: LEFT_X + 0.22, y: CS + PANEL_H - 0.42, w: LEFT_W - 0.4, h: 0.32,
+    fontSize: 7.5, color: "C4B5FD", italic: true,
+  });
+
+  // Right panel: bullet details with diamond markers
+  const n = slide.bullets.length;
+  const itemH = Math.min(PANEL_H / Math.max(n, 1), 0.9);
+  const dsize = 0.18;
+
+  slide.bullets.forEach((b, i) => {
+    const by = CS + i * itemH;
+    const dy = by + (itemH - dsize) / 2;
+    const { primary, secondary } = parseBullet(b);
+
+    ps.addShape(pptx.ShapeType.diamond, { x: RIGHT_X, y: dy, w: dsize, h: dsize, fill: { color: acc }, line: { color: acc } });
+    const textX = RIGHT_X + dsize + 0.12;
+    const textW = RIGHT_W - dsize - 0.12;
+
+    if (secondary) {
+      ps.addText(san(primary), {
+        x: textX, y: by + 0.04, w: textW, h: itemH * 0.5,
+        fontSize: 10.5, bold: true, color: NAVY, valign: "bottom",
+      });
+      ps.addText(san(secondary), {
+        x: textX, y: by + itemH * 0.5, w: textW, h: itemH * 0.44,
+        fontSize: 9, color: TEXT, valign: "top",
+      });
+    } else {
+      ps.addText(san(b), { x: textX, y: by, w: textW, h: itemH, fontSize: 10.5, color: TEXT, valign: "middle" });
+    }
+  });
+
+  ps.addNotes(san(slide.speaker_notes));
+}
+
+// ─── LAYOUT: ROW CARDS ─────────────────────────────────────────────────────
+// Full-width numbered rows — each bullet gets its own card with accent band on left.
+
+function renderRowCards(pptx: PptxGenJS, slide: BriefSlide, acc: string, light: string, bg: string): void {
+  const ps = pptx.addSlide();
+  drawBg(ps, pptx, bg);
   drawHeader(ps, pptx, slide, acc);
   const cY = drawBody(ps, pptx, slide, acc, light);
 
   const bullets = slide.bullets;
-  const half = Math.ceil(bullets.length / 2);
-  const colW = (W - 1.0) / 2;
-  const availH = CE - cY;
-  const itemH = Math.min(availH / Math.max(half, 1), 0.9);
-  const sq = 0.14;
-
-  // Column separator
-  if (bullets.length > 1) {
-    ps.addShape(pptx.ShapeType.rect, { x: 0.4 + colW + 0.07, y: cY, w: 0.01, h: CE - cY, fill: { color: "D1FAE5" }, line: { color: "D1FAE5" } });
-  }
+  const n = bullets.length;
+  const GAP = 0.12;
+  const availH = CE - cY - 0.05;
+  const cardH = Math.min((availH - GAP * (n - 1)) / Math.max(n, 1), 1.0);
+  const MX = 0.4;
+  const NUM_W = 0.65;
 
   bullets.forEach((b, i) => {
-    const col = i < half ? 0 : 1;
-    const row = i < half ? i : i - half;
-    const bx = 0.4 + col * (colW + 0.15);
-    const by = cY + row * itemH;
-    ps.addShape(pptx.ShapeType.rect, { x: bx, y: by + (itemH - sq) / 2, w: sq, h: sq, fill: { color: acc }, line: { color: acc } });
-    ps.addText(san(b), { x: bx + sq + 0.1, y: by, w: colW - sq - 0.15, h: itemH, fontSize: 10.5, color: TEXT, valign: "middle" });
+    const by = cY + i * (cardH + GAP);
+    const { primary, secondary } = parseBullet(b);
+
+    // Card background
+    ps.addShape(pptx.ShapeType.rect, { x: MX, y: by, w: W - MX * 2, h: cardH, fill: { color: WHITE }, line: { color: "E2E8F0", pt: 0.75 } });
+    // Numbered accent band (left)
+    ps.addShape(pptx.ShapeType.rect, { x: MX, y: by, w: NUM_W, h: cardH, fill: { color: acc }, line: { color: acc } });
+    ps.addText(String(i + 1).padStart(2, "0"), {
+      x: MX, y: by, w: NUM_W, h: cardH,
+      fontSize: 16, bold: true, color: WHITE, align: "center", valign: "middle",
+    });
+
+    const textX = MX + NUM_W + 0.18;
+    const textW = W - MX * 2 - NUM_W - 0.18 - 0.12;
+
+    if (secondary) {
+      ps.addText(san(primary), {
+        x: textX, y: by + 0.05, w: textW, h: cardH * 0.5,
+        fontSize: 11, bold: true, color: NAVY, valign: "bottom",
+      });
+      ps.addText(san(secondary), {
+        x: textX, y: by + cardH * 0.5, w: textW, h: cardH * 0.44,
+        fontSize: 9.5, color: TEXT, valign: "top",
+      });
+    } else {
+      ps.addText(san(b), { x: textX, y: by, w: textW, h: cardH, fontSize: 11, color: TEXT, valign: "middle" });
+    }
   });
 
   ps.addNotes(san(slide.speaker_notes));
 }
 
-// ─── TIMELINE ──────────────────────────────────────────────────────────────
-// Layout: horizontal colored blocks (≤5 items) or vertical numbered list
+// ─── LAYOUT: PHASE BLOCKS ──────────────────────────────────────────────────
+// Horizontal colored progression blocks for sequential phases (≤5).
+// Falls back to numbered list for 6+ items.
 
-function renderTimeline(pptx: PptxGenJS, slide: BriefSlide): void {
+function renderPhaseBlocks(pptx: PptxGenJS, slide: BriefSlide, acc: string, light: string, bg: string): void {
   const ps = pptx.addSlide();
-  const [acc, light] = ACCENTS.timeline;
-
-  drawBg(ps, pptx, "FFFBEB");
+  drawBg(ps, pptx, bg);
   drawHeader(ps, pptx, slide, acc);
   const cY = drawBody(ps, pptx, slide, acc, light);
 
@@ -284,7 +392,6 @@ function renderTimeline(pptx: PptxGenJS, slide: BriefSlide): void {
   const n = bullets.length;
 
   if (n <= 5) {
-    // Horizontal phase blocks with gradient-like progression
     const blockW = (W - 0.9) / n;
     const blockH = CE - cY;
     const blockColors = ["1E3A5F", "1D4ED8", "2563EB", "3B82F6", "60A5FA"];
@@ -293,22 +400,18 @@ function renderTimeline(pptx: PptxGenJS, slide: BriefSlide): void {
     bullets.forEach((b, i) => {
       const bx = 0.45 + i * blockW;
       const col = blockColors[i % blockColors.length];
-      // Block
       ps.addShape(pptx.ShapeType.rect, { x: bx, y: cY, w: blockW - 0.06, h: blockH, fill: { color: col }, line: { color: WHITE, pt: 1.5 } });
-      // Phase number (large, top of block)
       ps.addText(String(i + 1), { x: bx, y: cY + 0.06, w: blockW - 0.06, h: 0.5, fontSize: 22, bold: true, color: WHITE, align: "center" });
-      // Phase text (below number)
       ps.addText(san(b), { x: bx + 0.06, y: cY + 0.6, w: blockW - 0.18, h: blockH - 0.65, fontSize: textFs, color: WHITE, align: "center", valign: "top" });
     });
   } else {
-    // Vertical list: circle badge + connector line + text
+    // Vertical fallback with amber connector
     const itemH = Math.min((CE - cY) / Math.max(n, 1), 0.78);
     const badge = 0.3;
     const cx = 0.4 + badge / 2;
 
     bullets.forEach((b, i) => {
       const by = cY + i * itemH;
-      // Connector line (not after last)
       if (i < n - 1) {
         ps.addShape(pptx.ShapeType.rect, { x: cx - 0.012, y: by + badge + 0.04, w: 0.024, h: itemH - badge - 0.06, fill: { color: "FCD34D" }, line: { color: "FCD34D" } });
       }
@@ -321,122 +424,75 @@ function renderTimeline(pptx: PptxGenJS, slide: BriefSlide): void {
   ps.addNotes(san(slide.speaker_notes));
 }
 
-// ─── DELIVERABLES ──────────────────────────────────────────────────────────
-// Layout: checkbox squares + alternating row backgrounds
+// ─── LAYOUT: INSIGHT BOXES ─────────────────────────────────────────────────
+// Full-width white boxes with a thick left accent bar — each bullet is prominent.
 
-function renderDeliverables(pptx: PptxGenJS, slide: BriefSlide): void {
+function renderInsightBoxes(pptx: PptxGenJS, slide: BriefSlide, acc: string, light: string, bg: string): void {
   const ps = pptx.addSlide();
-  const [acc, light] = ACCENTS.deliverables;
-
-  drawBg(ps, pptx, "F0FDF4");
+  drawBg(ps, pptx, bg);
   drawHeader(ps, pptx, slide, acc);
   const cY = drawBody(ps, pptx, slide, acc, light);
 
-  const n = slide.bullets.length;
-  const itemH = Math.min((CE - cY) / Math.max(n, 1), 0.92);
-  const ck = Math.min(itemH * 0.42, 0.34);
+  const bullets = slide.bullets;
+  const n = bullets.length;
+  const MX = 0.4;
+  const GAP = 0.14;
+  const ACCENT_W = 0.1;
+  const PAD = 0.2;
+  const availH = CE - cY - 0.05;
+  const itemH = Math.min((availH - GAP * (n - 1)) / Math.max(n, 1), 1.1);
 
-  slide.bullets.forEach((b, i) => {
-    const by = cY + i * itemH;
-    // Alternating row tint
-    if (i % 2 === 0) {
-      ps.addShape(pptx.ShapeType.rect, { x: 0.35, y: by + 0.04, w: W - 0.7, h: itemH - 0.08, fill: { color: "DCFCE7" }, line: { color: "DCFCE7" } });
+  bullets.forEach((b, i) => {
+    const by = cY + i * (itemH + GAP);
+    const { primary, secondary } = parseBullet(b);
+
+    // White box with subtle border
+    ps.addShape(pptx.ShapeType.rect, { x: MX, y: by, w: W - MX * 2, h: itemH, fill: { color: WHITE }, line: { color: "D1D5DB", pt: 0.75 } });
+    // Thick left accent
+    ps.addShape(pptx.ShapeType.rect, { x: MX, y: by, w: ACCENT_W, h: itemH, fill: { color: acc }, line: { color: acc } });
+
+    const textX = MX + ACCENT_W + PAD;
+    const textW = W - MX * 2 - ACCENT_W - PAD - 0.12;
+
+    if (secondary) {
+      ps.addText(san(primary), {
+        x: textX, y: by + 0.04, w: textW, h: itemH * 0.52,
+        fontSize: 11, bold: true, color: NAVY, valign: "bottom",
+      });
+      ps.addText(san(secondary), {
+        x: textX, y: by + itemH * 0.52, w: textW, h: itemH * 0.42,
+        fontSize: 9.5, color: TEXT, valign: "top",
+      });
+    } else {
+      ps.addText(san(b), { x: textX, y: by, w: textW, h: itemH, fontSize: 11, color: TEXT, valign: "middle" });
     }
-    // Checkbox (filled square)
-    const cy = by + (itemH - ck) / 2;
-    ps.addShape(pptx.ShapeType.rect, { x: 0.42, y: cy, w: ck, h: ck, fill: { color: acc }, line: { color: acc } });
-    ps.addText("v", { x: 0.42, y: cy, w: ck, h: ck, fontSize: Math.round(ck * 18), bold: true, color: WHITE, align: "center", valign: "middle" });
-    ps.addText(san(b), { x: 0.42 + ck + 0.12, y: by, w: W - 0.42 - ck - 0.55, h: itemH, fontSize: 11, color: TEXT, valign: "middle" });
   });
 
   ps.addNotes(san(slide.speaker_notes));
 }
 
-// ─── INSIGHTS ──────────────────────────────────────────────────────────────
-// Layout: rightArrow shapes + alternating row backgrounds
+// ─── Layout dispatcher ─────────────────────────────────────────────────────
 
-function renderDecisions(pptx: PptxGenJS, slide: BriefSlide): void {
-  const ps = pptx.addSlide();
-  const [acc, light] = ACCENTS.insights;
+type LayoutRenderer = (
+  pptx: PptxGenJS,
+  slide: BriefSlide,
+  acc: string,
+  light: string,
+  bg: string,
+) => void;
 
-  drawBg(ps, pptx, "F5F3FF");
-  drawHeader(ps, pptx, slide, acc);
-  const cY = drawBody(ps, pptx, slide, acc, light);
-
-  const n = slide.bullets.length;
-  const itemH = Math.min((CE - cY) / Math.max(n, 1), 0.85);
-  const arrowH = Math.min(itemH * 0.38, 0.3);
-  const arrowW = arrowH * 1.15;
-
-  slide.bullets.forEach((b, i) => {
-    const by = cY + i * itemH;
-    const ay = by + (itemH - arrowH) / 2;
-    // Alternating row tint
-    if (i % 2 === 0) {
-      ps.addShape(pptx.ShapeType.rect, { x: 0.35, y: by + 0.03, w: W - 0.7, h: itemH - 0.06, fill: { color: "E0E7FF" }, line: { color: "E0E7FF" } });
-    }
-    // Arrow
-    ps.addShape(pptx.ShapeType.rightArrow, { x: 0.4, y: ay, w: arrowW, h: arrowH, fill: { color: acc }, line: { color: acc } });
-    ps.addText(san(b), { x: 0.4 + arrowW + 0.12, y: by, w: W - 0.4 - arrowW - 0.55, h: itemH, fontSize: 11, color: TEXT, valign: "middle" });
-  });
-
-  ps.addNotes(san(slide.speaker_notes));
-}
-
-// ─── NEXT STEPS ────────────────────────────────────────────────────────────
-// Layout: numbered ellipse badges with vertical connector dots
-
-function renderNextSteps(pptx: PptxGenJS, slide: BriefSlide): void {
-  const ps = pptx.addSlide();
-  const [acc, light] = ACCENTS.next_steps;
-
-  drawBg(ps, pptx, "F5F3FF");
-  drawHeader(ps, pptx, slide, acc);
-  const cY = drawBody(ps, pptx, slide, acc, light);
-
-  const n = slide.bullets.length;
-  const itemH = Math.min((CE - cY) / Math.max(n, 1), 0.92);
-  const badge = Math.min(itemH * 0.48, 0.38);
-  const cx = 0.4 + badge / 2;
-
-  slide.bullets.forEach((b, i) => {
-    const by = cY + i * itemH;
-    const cy = by + (itemH - badge) / 2;
-    // Connector line between steps
-    if (i < n - 1) {
-      ps.addShape(pptx.ShapeType.rect, { x: cx - 0.012, y: cy + badge, w: 0.024, h: itemH - badge, fill: { color: "A5B4FC" }, line: { color: "A5B4FC" } });
-    }
-    // Badge
-    ps.addShape(pptx.ShapeType.ellipse, { x: 0.4, y: cy, w: badge, h: badge, fill: { color: acc }, line: { color: acc } });
-    ps.addText(String(i + 1), { x: 0.4, y: cy, w: badge, h: badge, fontSize: Math.round(badge * 20), bold: true, color: WHITE, align: "center", valign: "middle" });
-    ps.addText(san(b), { x: 0.4 + badge + 0.15, y: by, w: W - 0.4 - badge - 0.55, h: itemH, fontSize: 11, color: TEXT, valign: "middle" });
-  });
-
-  ps.addNotes(san(slide.speaker_notes));
-}
-
-// ─── Dispatcher ────────────────────────────────────────────────────────────
-
-type Renderer = (pptx: PptxGenJS, slide: BriefSlide, brief: Brief) => void;
-
-const RENDERERS: Record<string, Renderer> = {
-  cover:        (pptx, slide, brief) => renderCover(pptx, slide, brief),
-  context:      (pptx, slide) => renderContext(pptx, slide),
-  objectives:   (pptx, slide) => renderObjectives(pptx, slide),
-  methodology:  (pptx, slide) => renderMethodology(pptx, slide),
-  participants: (pptx, slide) => renderParticipants(pptx, slide),
-  timeline:     (pptx, slide) => renderTimeline(pptx, slide),
-  deliverables: (pptx, slide) => renderDeliverables(pptx, slide),
-  insights:     (pptx, slide) => renderDecisions(pptx, slide),
-  next_steps:   (pptx, slide) => renderNextSteps(pptx, slide),
+const LAYOUT_RENDERERS: Record<string, LayoutRenderer> = {
+  list:           renderList,
+  "card-grid":    renderCardGrid,
+  "two-panel":    renderTwoPanel,
+  "row-cards":    renderRowCards,
+  "phase-blocks": renderPhaseBlocks,
+  "insight-boxes": renderInsightBoxes,
 };
 
 // ─── Main export ───────────────────────────────────────────────────────────
 
 export async function generateBriefPptx(rawBrief: Brief): Promise<Buffer> {
-  // Sanitize every string in the Brief before any pptxgenjs call.
-  // This is the only reliable way to guarantee btoa()-safe content,
-  // including speaker_notes and any nested field we might miss otherwise.
   const brief = deepSan(rawBrief);
 
   const pptx = new PptxGenJS();
@@ -446,8 +502,17 @@ export async function generateBriefPptx(rawBrief: Brief): Promise<Buffer> {
   pptx.author = "User Research Suite";
 
   for (const slide of brief.slides) {
-    const renderer = RENDERERS[slide.type];
-    if (renderer) renderer(pptx, slide, brief);
+    if (slide.type === "cover") {
+      renderCover(pptx, slide, brief);
+      continue;
+    }
+
+    const [acc, light] = ACCENTS[slide.type] ?? ACCENTS.context;
+    const bg = BG_COLORS[slide.type] ?? "F8FAFC";
+    const layout = slide.layout ?? "list"; // fallback if Claude omits the field
+
+    const renderer = LAYOUT_RENDERERS[layout] ?? renderList;
+    renderer(pptx, slide, acc, light, bg);
   }
 
   const output = await pptx.write({ outputType: "nodebuffer" });

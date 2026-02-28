@@ -192,7 +192,7 @@ const SLIDE_TYPE_COLORS: Record<BriefSlideType, string> = {
   timeline: "bg-amber-100 text-amber-800",
   deliverables: "bg-orange-100 text-orange-800",
   insights: "bg-indigo-100 text-indigo-800",
-  next_steps: "bg-emerald-100 text-emerald-800",
+  next_steps: "bg-sky-100 text-sky-800",
 };
 
 function SlideCard({ slide }: { slide: BriefSlide }) {
