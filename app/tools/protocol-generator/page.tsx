@@ -330,9 +330,31 @@ export default function ProtocolGeneratorPage() {
         </div>
 
         {/* Preview */}
-        <div className="flex flex-col">
-          {/* Protocol preview — order-1 on mobile (appears first), order-2 on desktop */}
-          <div className="order-1 lg:order-2">
+        <div>
+          {/* "Créer le brief" — desktop only, above preview */}
+          {pageState === "done" && (
+            <div className="hidden lg:block mb-4">
+              {briefContextOpen ? (
+                <BriefContextForm
+                  onSubmit={handleGenerateBrief}
+                  onCancel={() => setBriefContextOpen(false)}
+                />
+              ) : (
+                <Button
+                  onClick={() => setBriefContextOpen(true)}
+                  disabled={briefState === "streaming"}
+                  variant="default"
+                  size="sm"
+                  className="w-full"
+                >
+                  {briefState === "streaming"
+                    ? "Génération du brief…"
+                    : "Créer le brief stakeholders"}
+                </Button>
+              )}
+            </div>
+          )}
+
           {pageState === "idle" ? (
             <div className="flex flex-col items-center justify-center h-64 rounded-lg border border-dashed text-muted-foreground text-sm">
               <span className="text-4xl mb-3">📋</span>
@@ -391,33 +413,32 @@ export default function ProtocolGeneratorPage() {
               )}
             </>
           )}
-          </div>
-
-          {/* "Créer le brief" button — order-2 on mobile (appears after preview), order-1 on desktop */}
-          {pageState === "done" && (
-            <div className="order-2 lg:order-1 mt-4 lg:mt-0 lg:mb-4">
-              {briefContextOpen ? (
-                <BriefContextForm
-                  onSubmit={handleGenerateBrief}
-                  onCancel={() => setBriefContextOpen(false)}
-                />
-              ) : (
-                <Button
-                  onClick={() => setBriefContextOpen(true)}
-                  disabled={briefState === "streaming"}
-                  variant="default"
-                  size="sm"
-                  className="w-full"
-                >
-                  {briefState === "streaming"
-                    ? "Génération du brief…"
-                    : "Créer le brief stakeholders"}
-                </Button>
-              )}
-            </div>
-          )}
         </div>
       </div>
+
+      {/* "Créer le brief" — mobile only, below grid, above brief section */}
+      {pageState === "done" && (
+        <div className="lg:hidden mt-6">
+          {briefContextOpen ? (
+            <BriefContextForm
+              onSubmit={handleGenerateBrief}
+              onCancel={() => setBriefContextOpen(false)}
+            />
+          ) : (
+            <Button
+              onClick={() => setBriefContextOpen(true)}
+              disabled={briefState === "streaming"}
+              variant="default"
+              size="sm"
+              className="w-full"
+            >
+              {briefState === "streaming"
+                ? "Génération du brief…"
+                : "Créer le brief stakeholders"}
+            </Button>
+          )}
+        </div>
+      )}
 
       {/* Brief section — full width, below the 2-column grid */}
       {briefState !== "idle" && (
