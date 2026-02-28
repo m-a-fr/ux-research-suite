@@ -1,12 +1,10 @@
 "use client";
 
 import React from "react";
-import { Brief, BriefSlide, BriefSlideType } from "@/lib/types/brief";
+import { Brief } from "@/lib/types/brief";
 import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
-import { Card, CardContent } from "@/components/ui/card";
-import { Separator } from "@/components/ui/separator";
 import { Skeleton } from "@/components/ui/skeleton";
+import { BriefSlideViewer } from "./BriefSlideViewer";
 
 // ─── Streaming progress ────────────────────────────────────────────────────
 
@@ -28,7 +26,7 @@ const STREAMING_STAGES = [
   {
     id: "per_slide",
     label: "Rédaction des slides",
-    sublabel: "Contenu, bullets et speaker notes",
+    sublabel: "Contenu HTML et speaker notes",
     marker: "## Slide",
     pct: 20, // interpolated dynamically between 20% and 74%
   },
@@ -147,111 +145,19 @@ function StreamingProgress({ buffer }: { buffer: string }) {
         })}
       </ol>
 
-      {/* Skeleton slide cards */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 pt-2">
-        {Array.from({ length: 9 }).map((_, i) => (
-          <Skeleton key={i} className="h-24 w-full rounded-lg" />
-        ))}
-      </div>
-    </div>
-  );
-}
-
-// ─── Slide card ────────────────────────────────────────────────────────────
-
-const SLIDE_TYPE_LABELS: Record<BriefSlideType, string> = {
-  cover: "Couverture",
-  context: "Contexte",
-  objectives: "Objectifs",
-  methodology: "Méthodologie",
-  participants: "Participants",
-  timeline: "Calendrier",
-  deliverables: "Livrables",
-  insights: "Éclairages",
-  next_steps: "Prochaines étapes",
-};
-
-const SLIDE_TYPE_ICONS: Record<BriefSlideType, string> = {
-  cover: "🎯",
-  context: "🔍",
-  objectives: "📌",
-  methodology: "🧪",
-  participants: "👥",
-  timeline: "📅",
-  deliverables: "📦",
-  insights: "💡",
-  next_steps: "🚀",
-};
-
-const SLIDE_TYPE_COLORS: Record<BriefSlideType, string> = {
-  cover: "bg-slate-800 text-white border-slate-700",
-  context: "bg-slate-100 text-slate-700",
-  objectives: "bg-blue-100 text-blue-800",
-  methodology: "bg-violet-100 text-violet-800",
-  participants: "bg-green-100 text-green-800",
-  timeline: "bg-amber-100 text-amber-800",
-  deliverables: "bg-orange-100 text-orange-800",
-  insights: "bg-indigo-100 text-indigo-800",
-  next_steps: "bg-sky-100 text-sky-800",
-};
-
-function SlideCard({ slide }: { slide: BriefSlide }) {
-  const colorClass = SLIDE_TYPE_COLORS[slide.type] ?? "bg-gray-100 text-gray-800";
-  const label = SLIDE_TYPE_LABELS[slide.type] ?? slide.type;
-  const icon = SLIDE_TYPE_ICONS[slide.type] ?? "📄";
-  const isCover = slide.type === "cover";
-
-  return (
-    <Card className={`overflow-hidden ${isCover ? "border-slate-700" : ""}`}>
-      {/* Card header */}
-      <div
-        className={`flex items-center gap-2 px-3 py-2 border-b ${
-          isCover ? "bg-slate-800 border-slate-700" : "bg-muted/30 border-border"
-        }`}
-      >
-        <span className="text-base">{icon}</span>
-        <div className="flex-1 min-w-0">
-          <div className="flex items-center gap-1.5">
-            <span
-              className={`text-xs font-semibold ${
-                isCover ? "text-slate-300" : "text-muted-foreground"
-              }`}
-            >
-              {slide.slide_number}
-            </span>
-            <Badge
-              className={`${colorClass} border-0 text-xs px-1.5 py-0 h-auto shrink-0`}
-            >
-              {label}
-            </Badge>
+      {/* Skeleton viewer 16:9 */}
+      <div className="space-y-3 pt-2">
+        <Skeleton className="w-full rounded-xl" style={{ aspectRatio: "16/9" }} />
+        <div className="flex items-center justify-between">
+          <div className="flex gap-2">
+            <Skeleton className="h-8 w-8 rounded-md" />
+            <Skeleton className="h-8 w-16 rounded-md" />
+            <Skeleton className="h-8 w-8 rounded-md" />
           </div>
-          <p
-            className={`text-xs font-medium mt-0.5 truncate ${
-              isCover ? "text-white" : "text-foreground"
-            }`}
-          >
-            {slide.title}
-          </p>
+          <Skeleton className="h-8 w-36 rounded-md" />
         </div>
       </div>
-
-      {/* Bullets preview */}
-      <CardContent className="px-3 py-2.5">
-        <ul className="space-y-1">
-          {slide.bullets.slice(0, 3).map((bullet, i) => (
-            <li key={i} className="flex gap-1.5 text-xs text-muted-foreground">
-              <span className="mt-1 w-1 h-1 rounded-full bg-primary/40 shrink-0" />
-              <span className="line-clamp-2 leading-snug">{bullet}</span>
-            </li>
-          ))}
-          {slide.bullets.length > 3 && (
-            <li className="text-xs text-muted-foreground/50 pl-2.5">
-              +{slide.bullets.length - 3} autres…
-            </li>
-          )}
-        </ul>
-      </CardContent>
-    </Card>
+    </div>
   );
 }
 
@@ -274,6 +180,7 @@ interface BriefPreviewProps {
   onExport: () => void;
   isExporting: boolean;
   onReset?: () => void;
+  onExportPdf?: () => void;
 }
 
 export function BriefPreview({
@@ -283,6 +190,7 @@ export function BriefPreview({
   onExport,
   isExporting,
   onReset,
+  onExportPdf,
 }: BriefPreviewProps) {
   if (!isStreaming && !brief) return null;
 
@@ -297,39 +205,27 @@ export function BriefPreview({
 
   return (
     <div className="space-y-5">
-      {/* Header */}
-      <div className="flex items-start justify-between gap-3 flex-wrap">
-        <div>
-          <h2 className="text-xl font-semibold">{brief.project_title}</h2>
-          <div className="flex items-center gap-2 mt-1 flex-wrap">
-            <Badge variant="outline" className="text-xs">
-              {studyLabel}
-            </Badge>
-            <span className="text-xs text-muted-foreground">
-              {brief.slides.length} slides · {brief.generated_date}
-            </span>
-          </div>
-        </div>
-        <div className="flex items-center gap-2 flex-wrap">
-          {onReset && (
-            <Button onClick={onReset} variant="ghost" size="sm">
-              Régénérer le brief
-            </Button>
-          )}
-          <Button onClick={onExport} disabled={isExporting} variant="outline" size="sm">
-            {isExporting ? "Export…" : "Télécharger .pptx"}
-          </Button>
+      {/* Header metadata */}
+      <div>
+        <h2 className="text-xl font-semibold">{brief.project_title}</h2>
+        <div className="flex items-center gap-2 mt-1 flex-wrap">
+          <Badge variant="outline" className="text-xs">
+            {studyLabel}
+          </Badge>
+          <span className="text-xs text-muted-foreground">
+            {brief.slides.length} slides · {brief.generated_date}
+          </span>
         </div>
       </div>
 
-      <Separator />
-
-      {/* 3×3 slide grid */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-        {brief.slides.map((slide) => (
-          <SlideCard key={slide.slide_number} slide={slide} />
-        ))}
-      </div>
+      {/* Slide viewer with built-in controls */}
+      <BriefSlideViewer
+        brief={brief}
+        onExport={onExport}
+        isExporting={isExporting}
+        onReset={onReset}
+        onExportPdf={onExportPdf}
+      />
     </div>
   );
 }

@@ -239,11 +239,12 @@ function ScreenBlock({ title, screenText, label }: { title: string; screenText: 
   );
 }
 
-function HeaderMeta({ protocol, onExport, isExporting, extraBadges }: {
+function HeaderMeta({ protocol, onExport, isExporting, extraBadges, onExportPdf }: {
   protocol: { title: string; platform: string; fidelity: string; tool: string; estimated_duration_minutes: number };
   onExport: () => void;
   isExporting: boolean;
   extraBadges?: React.ReactNode;
+  onExportPdf?: () => void;
 }) {
   return (
     <div className="flex items-start justify-between gap-3 flex-wrap">
@@ -257,19 +258,26 @@ function HeaderMeta({ protocol, onExport, isExporting, extraBadges }: {
           <span className="text-xs text-muted-foreground">~{protocol.estimated_duration_minutes} min</span>
         </div>
       </div>
-      <Button onClick={onExport} disabled={isExporting} variant="outline" size="sm">
-        {isExporting ? "Export…" : "Télécharger .docx"}
-      </Button>
+      <div className="flex items-center gap-2">
+        {onExportPdf && (
+          <Button onClick={onExportPdf} disabled={isExporting} variant="ghost" size="sm">
+            {isExporting ? "…" : ".pdf"}
+          </Button>
+        )}
+        <Button onClick={onExport} disabled={isExporting} variant="outline" size="sm">
+          {isExporting ? "Export…" : "Télécharger .docx"}
+        </Button>
+      </div>
     </div>
   );
 }
 
 // ─── Monadic view ──────────────────────────────────────────────────────────
 
-function MonadicView({ protocol, onExport, isExporting }: { protocol: MonadicProtocol; onExport: () => void; isExporting: boolean }) {
+function MonadicView({ protocol, onExport, isExporting, onExportPdf }: { protocol: MonadicProtocol; onExport: () => void; isExporting: boolean; onExportPdf?: () => void }) {
   return (
     <div className="space-y-5">
-      <HeaderMeta protocol={protocol} onExport={onExport} isExporting={isExporting} />
+      <HeaderMeta protocol={protocol} onExport={onExport} isExporting={isExporting} onExportPdf={onExportPdf} />
       <Separator />
       {protocol.screener_questions.length > 0 && (
         <>
@@ -315,7 +323,7 @@ function MonadicView({ protocol, onExport, isExporting }: { protocol: MonadicPro
 
 // ─── A/B view ──────────────────────────────────────────────────────────────
 
-function ABView({ protocol, onExport, isExporting }: { protocol: ABProtocol; onExport: () => void; isExporting: boolean }) {
+function ABView({ protocol, onExport, isExporting, onExportPdf }: { protocol: ABProtocol; onExport: () => void; isExporting: boolean; onExportPdf?: () => void }) {
   const isWithin = protocol.ab_design === "within";
   return (
     <div className="space-y-5">
@@ -323,6 +331,7 @@ function ABView({ protocol, onExport, isExporting }: { protocol: ABProtocol; onE
         protocol={protocol}
         onExport={onExport}
         isExporting={isExporting}
+        onExportPdf={onExportPdf}
         extraBadges={
           <>
             <Badge className={`border-0 text-xs ${isWithin ? "bg-indigo-100 text-indigo-800" : "bg-orange-100 text-orange-800"}`}>
@@ -397,13 +406,14 @@ const ROLE_LABELS: Record<string, string> = {
   previous_version: "Version précédente",
 };
 
-function BenchmarkView({ protocol, onExport, isExporting }: { protocol: BenchmarkProtocol; onExport: () => void; isExporting: boolean }) {
+function BenchmarkView({ protocol, onExport, isExporting, onExportPdf }: { protocol: BenchmarkProtocol; onExport: () => void; isExporting: boolean; onExportPdf?: () => void }) {
   return (
     <div className="space-y-5">
       <HeaderMeta
         protocol={protocol}
         onExport={onExport}
         isExporting={isExporting}
+        onExportPdf={onExportPdf}
         extraBadges={
           <Badge className="bg-amber-100 text-amber-800 border-0 text-xs">
             {protocol.benchmark_type === "internal" ? "Benchmark interne" : "Benchmark compétitif"}
@@ -477,6 +487,7 @@ interface UnmoderatedPreviewProps {
   streamBuffer: string;
   onExport: () => void;
   isExporting: boolean;
+  onExportPdf?: () => void;
 }
 
 function getStages(buffer: string) {
@@ -485,7 +496,7 @@ function getStages(buffer: string) {
   return MONADIC_STAGES;
 }
 
-export function UnmoderatedPreview({ protocol, isStreaming, streamBuffer, onExport, isExporting }: UnmoderatedPreviewProps) {
+export function UnmoderatedPreview({ protocol, isStreaming, streamBuffer, onExport, isExporting, onExportPdf }: UnmoderatedPreviewProps) {
   if (!isStreaming && !protocol) return null;
 
   if (isStreaming) {
@@ -495,10 +506,10 @@ export function UnmoderatedPreview({ protocol, isStreaming, streamBuffer, onExpo
   if (!protocol) return null;
 
   if (protocol.test_design === "ab") {
-    return <ABView protocol={protocol} onExport={onExport} isExporting={isExporting} />;
+    return <ABView protocol={protocol} onExport={onExport} isExporting={isExporting} onExportPdf={onExportPdf} />;
   }
   if (protocol.test_design === "benchmark") {
-    return <BenchmarkView protocol={protocol} onExport={onExport} isExporting={isExporting} />;
+    return <BenchmarkView protocol={protocol} onExport={onExport} isExporting={isExporting} onExportPdf={onExportPdf} />;
   }
-  return <MonadicView protocol={protocol as MonadicProtocol} onExport={onExport} isExporting={isExporting} />;
+  return <MonadicView protocol={protocol as MonadicProtocol} onExport={onExport} isExporting={isExporting} onExportPdf={onExportPdf} />;
 }

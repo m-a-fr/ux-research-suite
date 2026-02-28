@@ -256,6 +256,70 @@ export default function ProtocolGeneratorPage() {
     // briefContext is preserved so user can tweak and regenerate
   }
 
+  async function handleExportProtocolPdf() {
+    if (!result) return;
+    setIsExporting(true);
+    try {
+      const response = await fetch("/api/export-protocol-pdf", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ protocol: result }),
+      });
+
+      if (!response.ok) {
+        const data = await response.json().catch(() => ({}));
+        throw new Error((data as { error?: string }).error ?? "Erreur lors de l'export");
+      }
+
+      const blob = await response.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `${result.study_type}-${Date.now()}.pdf`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "Erreur d'export";
+      alert(message);
+    } finally {
+      setIsExporting(false);
+    }
+  }
+
+  async function handleExportBriefPdf() {
+    if (!brief) return;
+    setIsExportingBrief(true);
+    try {
+      const response = await fetch("/api/export-brief-pdf", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ brief }),
+      });
+
+      if (!response.ok) {
+        const data = await response.json().catch(() => ({}));
+        throw new Error((data as { error?: string }).error ?? "Erreur lors de l'export");
+      }
+
+      const blob = await response.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `brief-${brief.project_title.slice(0, 40).replace(/\s+/g, "-")}-${Date.now()}.pdf`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "Erreur d'export";
+      alert(message);
+    } finally {
+      setIsExportingBrief(false);
+    }
+  }
+
   async function handleExportBrief() {
     if (!brief) return;
     setIsExportingBrief(true);
@@ -450,6 +514,7 @@ export default function ProtocolGeneratorPage() {
                   streamBuffer={streamBuffer}
                   onExport={handleExport}
                   isExporting={isExporting}
+                  onExportPdf={handleExportProtocolPdf}
                 />
               ) : activeStudyType === "survey" ? (
                 <SurveyPreview
@@ -458,6 +523,7 @@ export default function ProtocolGeneratorPage() {
                   streamBuffer={streamBuffer}
                   onExport={handleExport}
                   isExporting={isExporting}
+                  onExportPdf={handleExportProtocolPdf}
                 />
               ) : activeStudyType === "moderated_usability" ? (
                 <ModeratedPreview
@@ -468,6 +534,7 @@ export default function ProtocolGeneratorPage() {
                   streamBuffer={streamBuffer}
                   onExport={handleExport}
                   isExporting={isExporting}
+                  onExportPdf={handleExportProtocolPdf}
                 />
               ) : activeStudyType === "unmoderated_usability" ? (
                 <UnmoderatedPreview
@@ -478,6 +545,7 @@ export default function ProtocolGeneratorPage() {
                   streamBuffer={streamBuffer}
                   onExport={handleExport}
                   isExporting={isExporting}
+                  onExportPdf={handleExportProtocolPdf}
                 />
               ) : (
                 <ProtocolPreview
@@ -486,6 +554,7 @@ export default function ProtocolGeneratorPage() {
                   streamBuffer={streamBuffer}
                   onExport={handleExport}
                   isExporting={isExporting}
+                  onExportPdf={handleExportProtocolPdf}
                 />
               )}
             </>
@@ -514,6 +583,7 @@ export default function ProtocolGeneratorPage() {
             onExport={handleExportBrief}
             isExporting={isExportingBrief}
             onReset={handleResetBrief}
+            onExportPdf={handleExportBriefPdf}
           />
         </div>
       )}

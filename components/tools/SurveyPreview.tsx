@@ -415,6 +415,7 @@ interface SurveyPreviewProps {
   streamBuffer: string;
   onExport: () => void;
   isExporting: boolean;
+  onExportPdf?: () => void;
 }
 
 export function SurveyPreview({
@@ -423,6 +424,7 @@ export function SurveyPreview({
   streamBuffer,
   onExport,
   isExporting,
+  onExportPdf,
 }: SurveyPreviewProps) {
   if (!isStreaming && !survey) return null;
   if (isStreaming) return <StreamingProgress buffer={streamBuffer} />;
@@ -452,9 +454,16 @@ export function SurveyPreview({
             <span>{CHANNEL_LABELS[survey.distribution_channel] ?? survey.distribution_channel}</span>
           </div>
         </div>
-        <Button onClick={onExport} disabled={isExporting} variant="outline" size="sm">
-          {isExporting ? "Export…" : "Télécharger .docx"}
-        </Button>
+        <div className="flex items-center gap-2">
+          {onExportPdf && (
+            <Button onClick={onExportPdf} disabled={isExporting} variant="ghost" size="sm">
+              {isExporting ? "…" : ".pdf"}
+            </Button>
+          )}
+          <Button onClick={onExport} disabled={isExporting} variant="outline" size="sm">
+            {isExporting ? "Export…" : "Télécharger .docx"}
+          </Button>
+        </div>
       </div>
 
       {survey.screening_criteria && (

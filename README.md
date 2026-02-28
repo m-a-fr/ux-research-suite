@@ -25,13 +25,13 @@ Outil web open-source propulsé par **Claude AI** pour automatiser les tâches r
 
 User Research Suite permet aux UX researchers de générer en quelques secondes des livrables structurés et professionnels habituellement chronophages à produire. L'interface est entièrement en français.
 
-**Statut actuel : Sprint 2 terminé — Use cases 1 & 2 fonctionnels**
+**Statut actuel : Use cases 1 & 2 fonctionnels — export PDF disponible**
 
-| Outil | Statut |
-|---|---|
-| Générateur de protocole | ✅ Disponible |
-| Brief Builder (slides stakeholders) | ✅ Disponible |
-| Analyseur de résultats | 🔜 À venir |
+| Outil | Statut | Exports |
+|---|---|---|
+| Générateur de protocole | ✅ Disponible | `.docx` · `.pdf` |
+| Brief Builder (slides stakeholders) | ✅ Disponible | `.pptx` · `.pdf` |
+| Analyseur de résultats | 🔜 À venir | — |
 
 ---
 
@@ -141,7 +141,7 @@ Le site est mis à jour en 1 à 2 minutes.
 | Framework | Next.js 16 (App Router, TypeScript) |
 | UI | Tailwind CSS v4 + shadcn/ui (style new-york) |
 | IA | Anthropic SDK — `claude-sonnet-4-6` |
-| Export | `docx` → Word, `pptxgenjs` → PowerPoint, `xlsx` → Excel |
+| Export | `docx` → Word · `pptxgenjs` → PowerPoint · `@react-pdf/renderer` → PDF |
 | Formulaires | react-hook-form + Zod |
 | Fonts | Geist (next/font/google) |
 | Déploiement cible | Vercel / Docker |
@@ -207,39 +207,44 @@ ANTHROPIC_API_KEY=sk-ant-...
 ```
 /app
   /api
-    /generate-protocol/   → POST — streaming Claude → JSON protocol
-    /export-protocol/     → POST — génération DOCX → téléchargement
-    /generate-brief/      → POST — streaming Claude → JSON brief (9 slides)
-    /export-brief/        → POST — génération PPTX → téléchargement
+    /generate-protocol/     → POST — streaming Claude → JSON protocol
+    /export-protocol/       → POST — génération DOCX → téléchargement
+    /export-protocol-pdf/   → POST — génération PDF A4 → téléchargement
+    /generate-brief/        → POST — streaming Claude → JSON brief (9 slides HTML)
+    /export-brief/          → POST — génération PPTX → téléchargement
+    /export-brief-pdf/      → POST — génération PDF 16:9 → téléchargement
   /tools
-    /protocol-generator/  → Use case 1 + 2 : protocole + brief inline
-  layout.tsx              → Layout racine + header de navigation
-  page.tsx                → Landing page (3 cards outils)
-  globals.css             → Variables CSS Tailwind v4 + shadcn
+    /protocol-generator/    → Use case 1 + 2 : protocole + brief inline
+  layout.tsx                → Layout racine + header de navigation
+  page.tsx                  → Landing page marketing
+  globals.css               → Variables CSS Tailwind v4 + shadcn
 
 /components
-  /ui/                    → Composants shadcn/ui (button, card, form…)
+  /ui/                      → Composants shadcn/ui (button, card, form…)
   /tools/
     ExploratoryForm.tsx / ExploratoryPreview.tsx
     SurveyForm.tsx / SurveyPreview.tsx
     ModeratedForm.tsx / ModeratedPreview.tsx
     UnmoderatedForm.tsx / UnmoderatedPreview.tsx
-    BriefPreview.tsx      → Grille 3×3 de slides + streaming progress
+    BriefPreview.tsx          → Streaming progress + wrapper BriefSlideViewer
+    BriefSlideViewer.tsx      → Viewer 16:9, thumbnails, nav clavier, export PPTX + PDF
 
 /lib
   /types/
-    protocol.ts           → Interfaces TypeScript partagées
+    protocol.ts               → Interfaces TypeScript partagées
     exploratory.ts / survey.ts / moderated.ts / unmoderated.ts
-    brief.ts              → Brief, BriefSlide, BriefSlideType
+    brief.ts                  → Brief, BriefSlide, BriefSlideType
   /prompts/
-    index.ts              → Dispatcher getSystemPrompt(studyType, testDesign?)
+    index.ts                  → Dispatcher getSystemPrompt(studyType, testDesign?)
     exploratory_interview.ts / moderated_usability.ts
     unmoderated_usability.ts / survey.ts / diary_study.ts
-    brief.ts              → BRIEF_SYSTEM_PROMPT (9 slides, schéma JSON)
+    brief.ts                  → Prompt 2 phases : <reflexion> + <brief> JSON (HTML slides)
   /exporters/
     docx-exploratory.ts / docx-survey.ts
     docx-moderated.ts / docx-unmoderated.ts
-    pptx-brief.ts         → generateBriefPptx() — server-side (pptxgenjs)
+    pptx-brief.ts             → generateBriefPptx() — slides PPTX (pptxgenjs)
+    pdf-brief.tsx             → generateBriefPdf() — 9 slides 16:9 (@react-pdf/renderer)
+    pdf-protocol.tsx          → generateProtocolPdf() — A4 portrait, tous types
 ```
 
 ### Types TypeScript principaux
@@ -258,22 +263,21 @@ type StudyType =
 ```typescript
 type BriefSlideType =
   | "cover" | "context" | "objectives" | "methodology"
-  | "participants" | "timeline" | "deliverables" | "decisions" | "next_steps";
+  | "participants" | "timeline" | "deliverables" | "insights" | "next_steps";
 
 interface BriefSlide {
   slide_number: number;
   type: BriefSlideType;
   title: string;
-  body?: string;
-  bullets: string[];
   speaker_notes: string;
+  html: string;  // Fragment HTML auto-contenu avec styles inline
 }
 
 interface Brief {
   source_study_type: string;
   project_title: string;
-  generated_date: string; // ISO date
-  slides: BriefSlide[];   // 9 slides fixes
+  generated_date: string; // YYYY-MM-DD
+  slides: BriefSlide[];   // 9 slides
 }
 ```
 
@@ -285,26 +289,27 @@ interface Brief {
 
 **Types d'étude supportés**
 
-| Valeur | Label | Export |
+| Valeur | Label | Exports |
 |---|---|---|
-| `exploratory_interview` | Entretien exploratoire | `.docx` |
-| `moderated_usability` | Test d'utilisabilité modéré | `.docx` |
-| `unmoderated_usability` | Test non-modéré (monadic / A-B / benchmark) | `.docx` |
-| `survey` | Sondage / Survey | `.docx` |
+| `exploratory_interview` | Entretien exploratoire | `.docx` · `.pdf` |
+| `moderated_usability` | Test d'utilisabilité modéré | `.docx` · `.pdf` |
+| `unmoderated_usability` | Test non-modéré (monadic / A-B / benchmark) | `.docx` · `.pdf` |
+| `survey` | Sondage / Survey | `.docx` · `.pdf` |
 | `diary_study` | Diary Study | 🚧 désactivé |
 
-Chaque type d'étude possède son propre formulaire (react-hook-form + Zod), son prompt système et son exporter DOCX. L'unmoderated usability supporte 3 designs discriminés : `monadic`, `ab` (within ou between-subjects) et `benchmark` (interne ou compétitif).
+Chaque type d'étude possède son propre formulaire (react-hook-form + Zod), son prompt système et ses exporters. L'unmoderated usability supporte 3 designs discriminés : `monadic`, `ab` (within ou between-subjects) et `benchmark` (interne ou compétitif).
 
 **Output**
 
 - Preview structuré en temps réel (streaming) avec barre de progression par stage
 - Export `.docx` téléchargeable
+- Export `.pdf` (A4 portrait) avec page de garde sombre + pages de contenu structurées
 
 ---
 
 ### Use case 2 — Brief Builder ✅
 
-Génération de slides de brief stakeholders au format `.pptx` **directement depuis le protocole généré** — sans formulaire supplémentaire. Un bouton "Créer le brief stakeholders" apparaît une fois le protocole prêt.
+Génération de slides de brief stakeholders **directement depuis le protocole généré** — sans formulaire supplémentaire. Un formulaire de contexte (déclencheur, audience, contraintes) apparaît une fois le protocole prêt.
 
 **9 slides fixes**
 
@@ -317,14 +322,15 @@ Génération de slides de brief stakeholders au format `.pptx` **directement dep
 | 5 | `participants` | Profils, critères, mode de recrutement |
 | 6 | `timeline` | Phases et jalons (recrutement → restitution) |
 | 7 | `deliverables` | Livrables concrets attendus |
-| 8 | `decisions` | Décisions que les résultats permettront de prendre |
+| 8 | `insights` | Précédents et hypothèses métier |
 | 9 | `next_steps` | Actions immédiates avec responsables |
 
 **Output**
 
-- Grille 3×3 de cartes slides avec preview des bullets
-- Speaker notes natives PowerPoint (visibles en mode présentateur)
-- Export `.pptx` téléchargeable (mise en page 16:9, palette navy/blue)
+- Viewer 16:9 interactif (navigation clavier ←/→, strip de thumbnails)
+- Speaker notes pour chaque slide
+- Export `.pptx` téléchargeable (layout 16:9, palette dark/blue, speaker notes natifs)
+- Export `.pdf` (9 pages paysage 16:9, même design que le viewer)
 
 ---
 
@@ -385,13 +391,29 @@ Génère et télécharge le protocole au format Word.
 
 Fichier `.docx` en téléchargement direct.
 
+---
+
+### `POST /api/export-protocol-pdf`
+
+Génère et télécharge le protocole au format PDF.
+
+**Request body**
+
+```json
+{ "protocol": { ...objet Protocol complet... } }
+```
+
+**Response** — `application/pdf`
+
+Fichier `.pdf` en téléchargement direct. Format A4 portrait : page de garde sombre (fond `#171717`, bande bleue, titre blanc) + pages de contenu claires (`#F8FAFC`) avec sections, scripts, questions et tâches. Générée via `@react-pdf/renderer` (pur JavaScript, sans Chromium).
+
 **Erreurs**
 
 | Code | Cas |
 |---|---|
 | `400` | Corps invalide |
 | `422` | Protocole manquant ou incomplet |
-| `500` | Erreur lors de la génération DOCX |
+| `500` | Erreur lors de la génération PDF |
 
 ---
 
@@ -402,13 +424,19 @@ Génère un brief stakeholders en 9 slides à partir d'un protocole existant, av
 **Request body**
 
 ```json
-{ "protocol": { ...objet Protocol complet (n'importe quel type)... } }
+{
+  "protocol": { ...objet Protocol complet (n'importe quel type)... },
+  "context": {
+    "trigger": "Contexte déclencheur de l'étude",
+    "audience": "À qui ce brief sera présenté",
+    "constraints": "Contraintes de délai, budget ou périmètre"
+  }
+}
 ```
 
 **Response** — `text/plain` (streaming)
 
-Flux de texte contenant le JSON brut du brief, streamé caractère par caractère.
-En cas d'erreur : le flux se termine par `\n__ERROR__:<message>`.
+Flux de texte contenant le JSON brut du brief, streamé en deux phases : `<reflexion>` (planning slide par slide) puis `<brief>` (JSON avec HTML slides).
 
 **Erreurs**
 
@@ -444,6 +472,30 @@ Fichier `.pptx` en téléchargement direct (9 slides, layout 16:9, speaker notes
 
 ---
 
+### `POST /api/export-brief-pdf`
+
+Génère et télécharge le brief au format PDF.
+
+**Request body**
+
+```json
+{ "brief": { ...objet Brief complet... } }
+```
+
+**Response** — `application/pdf`
+
+Fichier `.pdf` en téléchargement direct. 9 pages paysage 720×405 pt (16:9) : slide de couverture sombre + slides de contenu avec header sombre, lignes extraites du HTML et barre d'accent colorée par type de slide. Générée via `@react-pdf/renderer`.
+
+**Erreurs**
+
+| Code | Cas |
+|---|---|
+| `400` | Corps invalide |
+| `422` | Brief manquant ou incomplet |
+| `500` | Erreur lors de la génération PDF |
+
+---
+
 ## Flux de données
 
 ```
@@ -465,24 +517,34 @@ Client (page.tsx)
     ▼
 <Type>Preview (streaming stage detection)
     │
-    ├── [clic Télécharger .docx]
+    ├── [clic .docx]
     │       │ POST /api/export-protocol { protocol }
     │       ▼
     │   generate<Type>Docx() → Buffer → Uint8Array → .docx
     │
+    ├── [clic .pdf]
+    │       │ POST /api/export-protocol-pdf { protocol }
+    │       ▼
+    │   generateProtocolPdf() → Buffer → Uint8Array → .pdf (A4)
+    │
     └── [clic Créer le brief]
-            │ POST /api/generate-brief { protocol }
-            │ anthropic.messages.stream(claude-sonnet-4-6, max_tokens: 4096)
+            │ POST /api/generate-brief { protocol, context }
+            │ anthropic.messages.stream(claude-sonnet-4-6, max_tokens: 16000)
             ▼
-        ReadableStream → chunks text/plain
-            │ accumule briefStreamBuffer → JSON.parse()
+        ReadableStream → <reflexion>...</reflexion> + <brief>{...}</brief>
+            │ JSON.parse(brief) → BriefSlide[].html (inline styles)
             ▼
-        BriefPreview (grille 3×3 slides)
+        BriefSlideViewer (viewer 16:9 + thumbnails + nav clavier)
             │
-            └── [clic Télécharger .pptx]
-                    │ POST /api/export-brief { brief }
+            ├── [clic .pptx]
+            │       │ POST /api/export-brief { brief }
+            │       ▼
+            │   generateBriefPptx() → Buffer → Uint8Array → .pptx
+            │
+            └── [clic .pdf]
+                    │ POST /api/export-brief-pdf { brief }
                     ▼
-                generateBriefPptx() → Buffer → Uint8Array → .pptx
+                generateBriefPdf() → Buffer → Uint8Array → .pdf (16:9)
 ```
 
 ---
@@ -500,19 +562,25 @@ Toutes les routes Claude utilisent `ReadableStream` pour éviter les timeouts su
 Claude répond en JSON contraint par le prompt système. Le front reconstruit la mise en forme — pas de markdown libre côté modèle.
 
 ### Limite de tokens
-`max_tokens: 8192` sur toutes les routes Claude. Si la limite est atteinte (`stop_reason === "max_tokens"`), un message d'erreur clair est envoyé au client via le stream.
+`max_tokens: 8192` sur les routes protocole, `max_tokens: 16000` sur la route brief (HTML slides + JSON wrapper). Si la limite est atteinte, un message d'erreur clair est envoyé via le stream.
 
 ### Exporters server-side uniquement
-`docx`, `pptxgenjs`, `xlsx` sont incompatibles avec l'environnement browser — ils s'exécutent exclusivement dans les routes API Next.js.
+`docx`, `pptxgenjs`, `@react-pdf/renderer` sont incompatibles avec l'environnement browser — ils s'exécutent exclusivement dans les routes API Next.js.
+
+### Export PDF sans navigateur
+`@react-pdf/renderer` génère les PDF via JSX + layout flexbox — pur JavaScript, sans Chromium ni Puppeteer. Compatible avec le runtime Node.js des API routes Next.js/Vercel.
+
+### HTML slides → PDF
+Le HTML généré par Claude (avec styles inline) est rendu dans le viewer browser. Pour le PDF, le texte est extrait via `htmlToLines()` (même fonction que pour le PPTX) et rendu dans les composants `@react-pdf/renderer`.
+
+### `new Uint8Array(nodeBuffer)` obligatoire
+`new Response(buffer)` échoue avec un `Buffer` Node.js dans Next.js 16 — il faut systématiquement convertir via `new Uint8Array(nodeBuffer)`.
 
 ### Prompts adaptatifs
-Un fichier de prompt distinct par type d'étude dans `/lib/prompts/`. Pas de prompt générique : chaque type a ses propres instructions, structure et ton.
+Un fichier de prompt distinct par type d'étude dans `/lib/prompts/`. Pas de prompt générique.
 
 ### Note de compatibilité — Next.js 16 + Tailwind v4
-Le projet a été scaffoldé avec Next.js 16 et Tailwind CSS v4 (pas de `tailwind.config.js` — configuration via `globals.css`). shadcn/ui détecte automatiquement v4.
-
-### Workaround npm — nom de package
-Le répertoire "Mehdi Next" contient des espaces et majuscules, invalides pour npm. Le `package.json` utilise le nom `user-research-suite`.
+Pas de `tailwind.config.js` — configuration via `globals.css` avec `@import "tailwindcss"`. shadcn/ui détecte automatiquement v4.
 
 ---
 
@@ -528,9 +596,18 @@ Le répertoire "Mehdi Next" contient des espaces et majuscules, invalides pour n
 ### Sprint 2 — Brief Builder ✅
 - [x] Route `/api/generate-brief` avec streaming (depuis n'importe quel protocole)
 - [x] Route `/api/export-brief` → `.pptx` 9 slides
-- [x] Composant `BriefPreview` (grille 3×3 + streaming progress)
-- [x] Exporter `pptx-brief.ts` (cover navy, slides contenu, speaker notes natifs)
+- [x] Composant `BriefSlideViewer` (viewer 16:9, thumbnails, nav clavier)
+- [x] Exporter `pptx-brief.ts` (cover dark, slides contenu, speaker notes natifs)
+- [x] Contexte utilisateur (déclencheur, audience, contraintes)
 - [x] Intégration inline dans le générateur de protocole
+
+### Export PDF ✅
+- [x] `@react-pdf/renderer` — librairie JSX pure, sans Chromium
+- [x] Route `/api/export-protocol-pdf` → `.pdf` A4 portrait (tous types)
+- [x] Route `/api/export-brief-pdf` → `.pdf` 16:9 paysage (9 slides)
+- [x] Exporter `pdf-protocol.tsx` — page de garde dark + contenu structuré par type
+- [x] Exporter `pdf-brief.tsx` — cover dark + slides avec accent par type
+- [x] Bouton `.pdf` sur chaque preview protocole et dans le viewer brief
 
 ### Sprint 3 — Analyseur de résultats 🔜
 - [ ] Upload fichiers CSV / texte (Maze, UserTesting, Typeform)

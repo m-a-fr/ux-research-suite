@@ -79,7 +79,7 @@ export async function POST(req: NextRequest) {
       try {
         const claudeStream = anthropic.messages.stream({
           model: "claude-sonnet-4-6",
-          max_tokens: 8192,
+          max_tokens: 16000,
           system: BRIEF_SYSTEM_PROMPT,
           messages: [{ role: "user", content: buildBriefUserMessage(protocol, context) }],
         });

@@ -249,6 +249,7 @@ interface ExploratoryPreviewProps {
   streamBuffer: string;
   onExport: () => void;
   isExporting: boolean;
+  onExportPdf?: () => void;
 }
 
 export function ExploratoryPreview({
@@ -257,6 +258,7 @@ export function ExploratoryPreview({
   streamBuffer,
   onExport,
   isExporting,
+  onExportPdf,
 }: ExploratoryPreviewProps) {
   if (!isStreaming && !protocol) return null;
 
@@ -288,9 +290,16 @@ export function ExploratoryPreview({
             <span>{totalThemes} thème{totalThemes > 1 ? "s" : ""}</span>
           </div>
         </div>
-        <Button onClick={onExport} disabled={isExporting} variant="outline" size="sm">
-          {isExporting ? "Export…" : "Télécharger .docx"}
-        </Button>
+        <div className="flex items-center gap-2">
+          {onExportPdf && (
+            <Button onClick={onExportPdf} disabled={isExporting} variant="ghost" size="sm">
+              {isExporting ? "…" : ".pdf"}
+            </Button>
+          )}
+          <Button onClick={onExport} disabled={isExporting} variant="outline" size="sm">
+            {isExporting ? "Export…" : "Télécharger .docx"}
+          </Button>
+        </div>
       </div>
 
       <Separator />

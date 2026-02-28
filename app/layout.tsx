@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { Geist } from "next/font/google";
 import Link from "next/link";
+import { Button } from "@/components/ui/button";
 import "./globals.css";
 
 const geist = Geist({
@@ -38,6 +39,11 @@ export default function RootLayout({
               <span className="text-sm px-3 py-1.5 rounded-md text-muted-foreground/50 cursor-not-allowed">
                 Analyse
               </span>
+              <div className="ml-3">
+                <Button asChild size="sm">
+                  <Link href="/tools/protocol-generator">Essayer</Link>
+                </Button>
+              </div>
             </nav>
           </div>
         </header>

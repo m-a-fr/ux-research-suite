@@ -323,6 +323,7 @@ interface ModeratedPreviewProps {
   streamBuffer: string;
   onExport: () => void;
   isExporting: boolean;
+  onExportPdf?: () => void;
 }
 
 export function ModeratedPreview({
@@ -331,6 +332,7 @@ export function ModeratedPreview({
   streamBuffer,
   onExport,
   isExporting,
+  onExportPdf,
 }: ModeratedPreviewProps) {
   if (!isStreaming && !protocol) return null;
   if (isStreaming) return <StreamingProgress buffer={streamBuffer} />;
@@ -356,9 +358,16 @@ export function ModeratedPreview({
             <span className="text-xs text-muted-foreground">{protocol.duration_minutes} min</span>
           </div>
         </div>
-        <Button onClick={onExport} disabled={isExporting} variant="outline" size="sm">
-          {isExporting ? "Export…" : "Télécharger .docx"}
-        </Button>
+        <div className="flex items-center gap-2">
+          {onExportPdf && (
+            <Button onClick={onExportPdf} disabled={isExporting} variant="ghost" size="sm">
+              {isExporting ? "…" : ".pdf"}
+            </Button>
+          )}
+          <Button onClick={onExport} disabled={isExporting} variant="outline" size="sm">
+            {isExporting ? "Export…" : "Télécharger .docx"}
+          </Button>
+        </div>
       </div>
 
       <Separator />

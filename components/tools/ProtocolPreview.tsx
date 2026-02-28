@@ -332,6 +332,7 @@ interface ProtocolPreviewProps {
   streamBuffer: string;
   onExport: () => void;
   isExporting: boolean;
+  onExportPdf?: () => void;
 }
 
 export function ProtocolPreview({
@@ -340,6 +341,7 @@ export function ProtocolPreview({
   streamBuffer,
   onExport,
   isExporting,
+  onExportPdf,
 }: ProtocolPreviewProps) {
   if (!isStreaming && !protocol) return null;
 
@@ -386,9 +388,16 @@ export function ProtocolPreview({
             Durée totale : {protocol.duration_minutes} min
           </p>
         </div>
-        <Button onClick={onExport} disabled={isExporting} variant="outline" size="sm">
-          {isExporting ? "Export…" : "Télécharger .docx"}
-        </Button>
+        <div className="flex items-center gap-2">
+          {onExportPdf && (
+            <Button onClick={onExportPdf} disabled={isExporting} variant="ghost" size="sm">
+              {isExporting ? "…" : ".pdf"}
+            </Button>
+          )}
+          <Button onClick={onExport} disabled={isExporting} variant="outline" size="sm">
+            {isExporting ? "Export…" : "Télécharger .docx"}
+          </Button>
+        </div>
       </div>
 
       <Separator />
