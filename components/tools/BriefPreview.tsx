@@ -42,7 +42,7 @@ const STREAMING_STAGES = [
   {
     id: "finalisation",
     label: "Finalisation",
-    sublabel: "Décisions et prochaines étapes",
+    sublabel: "Éclairages et prochaines étapes",
     marker: '"next_steps"',
     pct: 90,
   },
@@ -121,7 +121,7 @@ function StreamingProgress({ buffer }: { buffer: string }) {
       </ol>
 
       {/* Skeleton slide cards */}
-      <div className="grid grid-cols-3 gap-3 pt-2">
+      <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 pt-2">
         {Array.from({ length: 9 }).map((_, i) => (
           <Skeleton key={i} className="h-24 w-full rounded-lg" />
         ))}
@@ -140,7 +140,7 @@ const SLIDE_TYPE_LABELS: Record<BriefSlideType, string> = {
   participants: "Participants",
   timeline: "Calendrier",
   deliverables: "Livrables",
-  decisions: "Décisions",
+  eclairages: "Éclairages",
   next_steps: "Prochaines étapes",
 };
 
@@ -152,7 +152,7 @@ const SLIDE_TYPE_ICONS: Record<BriefSlideType, string> = {
   participants: "👥",
   timeline: "📅",
   deliverables: "📦",
-  decisions: "⚖️",
+  eclairages: "💡",
   next_steps: "🚀",
 };
 
@@ -164,7 +164,7 @@ const SLIDE_TYPE_COLORS: Record<BriefSlideType, string> = {
   participants: "bg-green-100 text-green-800",
   timeline: "bg-amber-100 text-amber-800",
   deliverables: "bg-orange-100 text-orange-800",
-  decisions: "bg-red-100 text-red-800",
+  eclairages: "bg-sky-100 text-sky-800",
   next_steps: "bg-emerald-100 text-emerald-800",
 };
 
@@ -288,8 +288,8 @@ export function BriefPreview({
 
       <Separator />
 
-      {/* 3×3 slide grid */}
-      <div className="grid grid-cols-3 gap-3">
+      {/* slide grid */}
+      <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
         {brief.slides.map((slide) => (
           <SlideCard key={slide.slide_number} slide={slide} />
         ))}

@@ -55,7 +55,7 @@ const ACCENTS: Record<string, [string, string]> = {
   participants: ["0D9488", "CCFBF1"],
   timeline:     ["B45309", "FEF3C7"],
   deliverables: ["059669", "D1FAE5"],
-  decisions:    ["DC2626", "FEE2E2"],
+  eclairages:   ["0284C7", "E0F2FE"],
   next_steps:   ["4F46E5", "EEF2FF"],
 };
 
@@ -352,32 +352,30 @@ function renderDeliverables(pptx: PptxGenJS, slide: BriefSlide): void {
   ps.addNotes(san(slide.speaker_notes));
 }
 
-// ─── DECISIONS ─────────────────────────────────────────────────────────────
-// Layout: rightArrow shapes + alternating row backgrounds
+// ─── ECLAIRAGES ─────────────────────────────────────────────────────────────
+// Layout: circle bullets + alternating row backgrounds
 
-function renderDecisions(pptx: PptxGenJS, slide: BriefSlide): void {
+function renderEclairages(pptx: PptxGenJS, slide: BriefSlide): void {
   const ps = pptx.addSlide();
-  const [acc, light] = ACCENTS.decisions;
+  const [acc, light] = ACCENTS.eclairages;
 
-  drawBg(ps, pptx, "FFF5F5");
+  drawBg(ps, pptx, "F0F9FF");
   drawHeader(ps, pptx, slide, acc);
   const cY = drawBody(ps, pptx, slide, acc, light);
 
   const n = slide.bullets.length;
   const itemH = Math.min((CE - cY) / Math.max(n, 1), 0.85);
-  const arrowH = Math.min(itemH * 0.38, 0.3);
-  const arrowW = arrowH * 1.15;
+  const dotR = Math.min(itemH * 0.18, 0.14);
 
   slide.bullets.forEach((b, i) => {
     const by = cY + i * itemH;
-    const ay = by + (itemH - arrowH) / 2;
     // Alternating row tint
     if (i % 2 === 0) {
-      ps.addShape(pptx.ShapeType.rect, { x: 0.35, y: by + 0.03, w: W - 0.7, h: itemH - 0.06, fill: { color: "FEE2E2" }, line: { color: "FEE2E2" } });
+      ps.addShape(pptx.ShapeType.rect, { x: 0.35, y: by + 0.03, w: W - 0.7, h: itemH - 0.06, fill: { color: "E0F2FE" }, line: { color: "E0F2FE" } });
     }
-    // Arrow
-    ps.addShape(pptx.ShapeType.rightArrow, { x: 0.4, y: ay, w: arrowW, h: arrowH, fill: { color: acc }, line: { color: acc } });
-    ps.addText(san(b), { x: 0.4 + arrowW + 0.12, y: by, w: W - 0.4 - arrowW - 0.55, h: itemH, fontSize: 11, color: TEXT, valign: "middle" });
+    // Circle bullet
+    ps.addShape(pptx.ShapeType.ellipse, { x: 0.42, y: by + (itemH - dotR) / 2, w: dotR, h: dotR, fill: { color: acc }, line: { color: acc } });
+    ps.addText(san(b), { x: 0.42 + dotR + 0.12, y: by, w: W - 0.42 - dotR - 0.55, h: itemH, fontSize: 11, color: TEXT, valign: "middle" });
   });
 
   ps.addNotes(san(slide.speaker_notes));
@@ -427,7 +425,7 @@ const RENDERERS: Record<string, Renderer> = {
   participants: (pptx, slide) => renderParticipants(pptx, slide),
   timeline:     (pptx, slide) => renderTimeline(pptx, slide),
   deliverables: (pptx, slide) => renderDeliverables(pptx, slide),
-  decisions:    (pptx, slide) => renderDecisions(pptx, slide),
+  eclairages:   (pptx, slide) => renderEclairages(pptx, slide),
   next_steps:   (pptx, slide) => renderNextSteps(pptx, slide),
 };
 
