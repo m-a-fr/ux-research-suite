@@ -303,7 +303,7 @@ export default function ProtocolGeneratorPage() {
 
       <Separator className="mb-6" />
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 items-start">
+      <div className="flex flex-col gap-8 lg:grid lg:grid-cols-2 lg:items-start">
         {/* Formulaire */}
         <div className="lg:sticky top-6">
           {isExploratory ? (
