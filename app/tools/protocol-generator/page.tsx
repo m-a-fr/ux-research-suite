@@ -270,6 +270,26 @@ export default function ProtocolGeneratorPage() {
   // Determine which preview to show — based on active study type or received result
   const activeStudyType = result?.study_type ?? studyType;
 
+  // Brief CTA — extracted to avoid JSX duplication across breakpoints
+  const briefCTA = pageState === "done" ? (
+    briefContextOpen ? (
+      <BriefContextForm
+        onSubmit={handleGenerateBrief}
+        onCancel={() => setBriefContextOpen(false)}
+      />
+    ) : (
+      <Button
+        onClick={() => setBriefContextOpen(true)}
+        disabled={briefState === "streaming"}
+        variant="default"
+        size="sm"
+        className="w-full"
+      >
+        {briefState === "streaming" ? "Génération du brief…" : "Créer le brief stakeholders"}
+      </Button>
+    )
+  ) : null;
+
   return (
     <div className="max-w-6xl mx-auto px-4 py-10">
       {/* Header */}
@@ -303,7 +323,12 @@ export default function ProtocolGeneratorPage() {
 
       <Separator className="mb-6" />
 
+      {/*
+        Mobile : colonne unique — formulaire en haut, contenu généré en bas.
+        Desktop (lg+) : deux colonnes — formulaire à gauche (sticky), preview à droite.
+      */}
       <div className="flex flex-col gap-8 lg:grid lg:grid-cols-2 lg:items-start">
+
         {/* Formulaire */}
         <div className="lg:sticky top-6">
           {isExploratory ? (
@@ -321,7 +346,6 @@ export default function ProtocolGeneratorPage() {
               isLoading={isLoading}
             />
           )}
-
           {pageState === "error" && error && (
             <div className="mt-4 rounded-md border border-destructive/50 bg-destructive/10 px-4 py-3 text-sm text-destructive">
               <strong>Erreur :</strong> {error}
@@ -329,31 +353,10 @@ export default function ProtocolGeneratorPage() {
           )}
         </div>
 
-        {/* Preview */}
+        {/* Preview — desktop : colonne droite ; mobile : sous le formulaire */}
         <div>
-          {/* "Créer le brief" — desktop only, above preview */}
-          {pageState === "done" && (
-            <div className="hidden lg:block mb-4">
-              {briefContextOpen ? (
-                <BriefContextForm
-                  onSubmit={handleGenerateBrief}
-                  onCancel={() => setBriefContextOpen(false)}
-                />
-              ) : (
-                <Button
-                  onClick={() => setBriefContextOpen(true)}
-                  disabled={briefState === "streaming"}
-                  variant="default"
-                  size="sm"
-                  className="w-full"
-                >
-                  {briefState === "streaming"
-                    ? "Génération du brief…"
-                    : "Créer le brief stakeholders"}
-                </Button>
-              )}
-            </div>
-          )}
+          {/* Brief CTA — desktop uniquement, au-dessus de la preview */}
+          {briefCTA && <div className="hidden lg:block mb-4">{briefCTA}</div>}
 
           {pageState === "idle" ? (
             <div className="flex flex-col items-center justify-center h-64 rounded-lg border border-dashed text-muted-foreground text-sm">
@@ -362,13 +365,9 @@ export default function ProtocolGeneratorPage() {
             </div>
           ) : (
             <>
-              <Separator className="lg:hidden mb-6" />
-
               {activeStudyType === "exploratory_interview" ? (
                 <ExploratoryPreview
-                  protocol={result?.study_type === "exploratory_interview"
-                    ? (result as ExploratoryProtocol)
-                    : null}
+                  protocol={result?.study_type === "exploratory_interview" ? (result as ExploratoryProtocol) : null}
                   isStreaming={pageState === "streaming"}
                   streamBuffer={streamBuffer}
                   onExport={handleExport}
@@ -384,9 +383,7 @@ export default function ProtocolGeneratorPage() {
                 />
               ) : activeStudyType === "moderated_usability" ? (
                 <ModeratedPreview
-                  protocol={result?.study_type === "moderated_usability"
-                    ? (result as ModeratedProtocol)
-                    : null}
+                  protocol={result?.study_type === "moderated_usability" ? (result as ModeratedProtocol) : null}
                   isStreaming={pageState === "streaming"}
                   streamBuffer={streamBuffer}
                   onExport={handleExport}
@@ -394,9 +391,7 @@ export default function ProtocolGeneratorPage() {
                 />
               ) : activeStudyType === "unmoderated_usability" ? (
                 <UnmoderatedPreview
-                  protocol={result?.study_type === "unmoderated_usability"
-                    ? (result as UnmoderatedProtocol)
-                    : null}
+                  protocol={result?.study_type === "unmoderated_usability" ? (result as UnmoderatedProtocol) : null}
                   isStreaming={pageState === "streaming"}
                   streamBuffer={streamBuffer}
                   onExport={handleExport}
@@ -414,46 +409,22 @@ export default function ProtocolGeneratorPage() {
             </>
           )}
         </div>
+
       </div>
 
-      {/* "Créer le brief" — mobile only, below grid, above brief section */}
-      {pageState === "done" && (
-        <div className="lg:hidden mt-6">
-          {briefContextOpen ? (
-            <BriefContextForm
-              onSubmit={handleGenerateBrief}
-              onCancel={() => setBriefContextOpen(false)}
-            />
-          ) : (
-            <Button
-              onClick={() => setBriefContextOpen(true)}
-              disabled={briefState === "streaming"}
-              variant="default"
-              size="sm"
-              className="w-full"
-            >
-              {briefState === "streaming"
-                ? "Génération du brief…"
-                : "Créer le brief stakeholders"}
-            </Button>
-          )}
-        </div>
-      )}
+      {/* Brief CTA — mobile uniquement, sous la preview */}
+      {briefCTA && <div className="lg:hidden mt-6">{briefCTA}</div>}
 
-      {/* Brief section — full width, below the 2-column grid */}
+      {/* Brief — pleine largeur, sous le layout principal */}
       {briefState !== "idle" && (
         <div className="mt-10">
           <Separator className="mb-6" />
-          <div className="mb-4 flex items-center gap-2">
-            <h2 className="text-lg font-semibold">Brief stakeholders</h2>
-          </div>
-
+          <h2 className="text-lg font-semibold mb-4">Brief stakeholders</h2>
           {briefState === "error" && briefError && (
             <div className="mb-4 rounded-md border border-destructive/50 bg-destructive/10 px-4 py-3 text-sm text-destructive">
               <strong>Erreur :</strong> {briefError}
             </div>
           )}
-
           <BriefPreview
             brief={brief}
             isStreaming={briefState === "streaming"}
