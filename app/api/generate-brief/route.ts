@@ -10,13 +10,32 @@ interface AnyProtocol {
   [key: string]: unknown;
 }
 
+interface BriefContext {
+  business_context: string;
+  restitution_date?: string;
+  stakeholders?: string;
+}
+
 // ─── User message builder ──────────────────────────────────────────────────
 
-function buildBriefUserMessage(protocol: AnyProtocol): string {
+function buildBriefUserMessage(protocol: AnyProtocol, context: BriefContext): string {
+  const contextLines = [
+    `CONTEXTE BUSINESS : ${context.business_context}`,
+  ];
+  if (context.restitution_date) {
+    contextLines.push(`DATE DE RESTITUTION : ${context.restitution_date}`);
+  }
+  if (context.stakeholders) {
+    contextLines.push(`DESTINATAIRES : ${context.stakeholders}`);
+  }
+
   return [
     `Génère un brief stakeholders à partir du protocole UX complet suivant.`,
     ``,
-    `PROTOCOLE COMPLET (JSON) :`,
+    `## CONTEXTE FOURNI PAR L'ÉQUIPE`,
+    ...contextLines,
+    ``,
+    `## PROTOCOLE COMPLET (JSON)`,
     `\`\`\`json`,
     JSON.stringify(protocol, null, 2),
     `\`\`\``,
@@ -37,9 +56,12 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Corps de requête invalide" }, { status: 400 });
   }
 
-  const { protocol } = body as { protocol?: AnyProtocol };
+  const { protocol, briefContext } = body as { protocol?: AnyProtocol; briefContext?: BriefContext };
   if (!protocol || !protocol.title || !protocol.study_type) {
     return NextResponse.json({ error: "Protocole invalide ou manquant" }, { status: 422 });
+  }
+  if (!briefContext?.business_context) {
+    return NextResponse.json({ error: "Contexte business manquant" }, { status: 422 });
   }
 
   const stream = new ReadableStream({
@@ -49,7 +71,7 @@ export async function POST(req: NextRequest) {
           model: "claude-sonnet-4-6",
           max_tokens: 8192,
           system: BRIEF_SYSTEM_PROMPT,
-          messages: [{ role: "user", content: buildBriefUserMessage(protocol) }],
+          messages: [{ role: "user", content: buildBriefUserMessage(protocol, briefContext) }],
         });
 
         for await (const chunk of claudeStream) {

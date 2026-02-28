@@ -18,6 +18,7 @@ import { ModeratedPreview } from "@/components/tools/ModeratedPreview";
 import { UnmoderatedForm } from "@/components/tools/UnmoderatedForm";
 import { UnmoderatedPreview } from "@/components/tools/UnmoderatedPreview";
 import { BriefPreview } from "@/components/tools/BriefPreview";
+import { BriefContextForm, BriefContext } from "@/components/tools/BriefContextForm";
 import { Separator } from "@/components/ui/separator";
 import { Button } from "@/components/ui/button";
 import {
@@ -58,6 +59,7 @@ export default function ProtocolGeneratorPage() {
   const [briefStreamBuffer, setBriefStreamBuffer] = useState("");
   const [isExportingBrief, setIsExportingBrief] = useState(false);
   const [briefError, setBriefError] = useState<string | null>(null);
+  const [briefContextOpen, setBriefContextOpen] = useState(false);
 
   function handleTypeChange(newType: StudyType) {
     setStudyType(newType);
@@ -69,6 +71,7 @@ export default function ProtocolGeneratorPage() {
     setBriefState("idle");
     setBriefStreamBuffer("");
     setBriefError(null);
+    setBriefContextOpen(false);
   }
 
   async function handleGenerate(values: AnyFormValues) {
@@ -80,6 +83,7 @@ export default function ProtocolGeneratorPage() {
     setBriefState("idle");
     setBriefStreamBuffer("");
     setBriefError(null);
+    setBriefContextOpen(false);
 
     try {
       const response = await fetch("/api/generate-protocol", {
@@ -165,8 +169,9 @@ export default function ProtocolGeneratorPage() {
     }
   }
 
-  async function handleGenerateBrief() {
+  async function handleGenerateBrief(context: BriefContext) {
     if (!result) return;
+    setBriefContextOpen(false);
     setBriefState("streaming");
     setBriefStreamBuffer("");
     setBrief(null);
@@ -176,7 +181,7 @@ export default function ProtocolGeneratorPage() {
       const response = await fetch("/api/generate-brief", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ protocol: result }),
+        body: JSON.stringify({ protocol: result, briefContext: context }),
       });
 
       if (!response.ok) {
@@ -329,17 +334,24 @@ export default function ProtocolGeneratorPage() {
           {/* "Créer le brief" button — shown only when protocol is done */}
           {pageState === "done" && (
             <div className="mb-4">
-              <Button
-                onClick={handleGenerateBrief}
-                disabled={briefState === "streaming"}
-                variant="default"
-                size="sm"
-                className="w-full"
-              >
-                {briefState === "streaming"
-                  ? "Génération du brief…"
-                  : "Créer le brief stakeholders"}
-              </Button>
+              {briefContextOpen ? (
+                <BriefContextForm
+                  onSubmit={handleGenerateBrief}
+                  onCancel={() => setBriefContextOpen(false)}
+                />
+              ) : (
+                <Button
+                  onClick={() => setBriefContextOpen(true)}
+                  disabled={briefState === "streaming"}
+                  variant="default"
+                  size="sm"
+                  className="w-full"
+                >
+                  {briefState === "streaming"
+                    ? "Génération du brief…"
+                    : "Créer le brief stakeholders"}
+                </Button>
+              )}
             </div>
           )}
 
