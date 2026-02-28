@@ -73,8 +73,12 @@ function ButtonGroup<T extends string>({
   options: { value: T; label: string; desc: string }[];
   cols?: number;
 }) {
+  const gridClass =
+    cols === 1 ? "grid-cols-1" :
+    cols === 2 ? "grid-cols-2" :
+    "grid-cols-1 sm:grid-cols-3";
   return (
-    <div className={`grid grid-cols-${cols} gap-2`}>
+    <div className={`grid ${gridClass} gap-2`}>
       {options.map((opt) => {
         const isSelected = field.value === opt.value;
         return (
